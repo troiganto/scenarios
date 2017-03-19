@@ -4,8 +4,5 @@ version = "0.1.0"
 authors = ["Nico Madysa <nico.madysa@tu-dresden.de>"]
 
 [dependencies]
-clap = "*"
-itertools = "*"
-docopt = "*"
-simplelog = "*"
-env_logger = "*"
+lazy_static = "*"
+regex = "*"
