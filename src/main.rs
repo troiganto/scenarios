@@ -8,6 +8,7 @@ extern crate lazy_static;
 mod errors;
 mod inputline;
 mod scenario;
+mod scenario_file;
 
 
 use clap::{Arg, App};

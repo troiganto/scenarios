@@ -1,10 +1,8 @@
 
-use std::path::PathBuf;
 use std::fs::File;
 use std::io::{self, BufRead};
-use std::collections::hash_map::{self, HashMap};
 
-use errors::ParseError;
+use errors::{ParseError, FileParseError};
 use scenario::Scenario;
 use inputline::InputLine;
 
@@ -15,7 +13,7 @@ use inputline::InputLine;
 /// scenario definitions.
 #[derive(Clone, Debug)]
 pub struct ScenarioFile {
-    path: PathBuf,
+    name: String,
     scenarios: Vec<Scenario>
 }
 
@@ -30,14 +28,50 @@ impl ScenarioFile {
     /// the case if the passed file does not contain any scenarios, if
     /// there is a syntax error before finding the first scenario or if
     /// any I/O error occurs.
-    pub fn new<S: Into<PathBuf>>(path: S) -> Result<Self, ParseError> {
+    pub fn with_path<S: Into<String>>(path: S) -> Result<Self, FileParseError> {
+        let path = path.into();
         let file = File::open(&path)?;
-        ScenarioFile{path: path, scenarios: ScenariosIter::new(file).collect()}
+        ScenarioFile::with_name(path, io::BufReader::new(file))
     }
 
-    pub as_slice(&self) -> &[Scenario] { self.scenarios.as_slice() }
+    /// Create a new named collection of scenarios from a file.
+    ///
+    /// This reads the input file `file`, which is assumed to be named
+    /// `name` and parses it as a list of scenario descriptions.
+    ///
+    /// # Errors
+    /// This call fails if the iterator cannot be constructed. This is
+    /// the case if the passed file does not contain any scenarios, if
+    /// there is a syntax error before finding the first scenario or if
+    /// any I/O error occurs.
+    pub fn with_name<S, F>(name: S, file: F) -> Result<Self, FileParseError>
+    where
+        S: Into<String>,
+        F: BufRead,
+    {
+        let mut result = ScenarioFile{name: name.into(), scenarios: Vec::new()};
 
-    pub iter(&self) -> ::std::vec::Iter { self.scenarios.iter() }
+        let iter = match ScenariosIter::new(file) {
+            Ok(iter) => iter,
+            Err(err) => { return Err(result.into_error(err)); },
+        };
+        for s in iter {
+            match s {
+                Ok(s) => { result.scenarios.push(s); }
+                Err(err) => { return Err(result.into_error(err)); },
+            };
+        }
+
+        Ok(result)
+    }
+
+    pub fn as_slice(&self) -> &[Scenario] { self.scenarios.as_slice() }
+
+    pub fn iter(&self) -> ::std::slice::Iter<Scenario> { self.scenarios.iter() }
+
+    fn into_error(self, err: ParseError) -> FileParseError {
+        FileParseError::ParseError{name: self.name, inner: err}
+    }
 }
 
 
@@ -60,7 +94,7 @@ impl<F: BufRead> ScenariosIter<F> {
     /// # Errors
     /// See `scan_to_first_header()` for a description of error modes.
     fn new(file: F) -> Result<Self, ParseError> {
-        let mut iter = Iter{lines: file.lines(), next_header: None};
+        let mut iter = ScenariosIter{lines: file.lines(), next_header: None};
         iter.scan_to_first_header()?;
         Ok(iter)
     }
@@ -169,7 +203,7 @@ mod tests {
         [Third Scenario]
         ";
         let file = Cursor::new(input);
-        let output = ScenarioFile::new("name", file).unwrap();
+        let output = ScenarioFile::with_name("name", file).unwrap();
 
         let s = output.iter().next().unwrap();
         assert_eq!(s.name(), "First Scenario");
