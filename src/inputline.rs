@@ -52,11 +52,9 @@ impl InputLine {
     /// non-comment line, `InputLine::None` is returned.
     pub fn from_iter<I>(lines: &mut I) -> Self where I: Iterator<Item=String> {
         for line in lines {
-            let line = line.trim();
-            if Self::is_ignorable(line) {
-                continue;
+            if let Some(line) = Self::from_line(&line) {
+                return line;
             }
-            return Self::handle_relevant_line(line);
         }
         InputLine::None
     }
@@ -66,24 +64,28 @@ impl InputLine {
         where I: Iterator<Item=io::Result<String>>
     {
         for line in lines {
-            let line = line?;
-            let line = line.trim();
-            if Self::is_ignorable(line) {
-                continue;
+            if let Some(line) = Self::from_line(&line?) {
+                return Ok(line);
             }
-            return Ok(Self::handle_relevant_line(line));
         }
         Ok(InputLine::None)
     }
 
-    /// Parses a non-blank, non-comment line.
-    fn handle_relevant_line(line: &str) -> Self {
-        if let Some(name) = Self::parse_header(line) {
-            InputLine::Header(name.to_owned())
+    /// Parses a line and decide how to interpret it.
+    ///
+    /// If the passed line is blank or a comment (ignoring surrounding
+    /// whitespace), this function returns `None`. Otherwise, it
+    /// returns some interpreted result.
+    fn from_line(line: &str) -> Option<Self> {
+        let line = line.trim();
+        if Self::is_ignorable(line) {
+            None
+        } else if let Some(name) = Self::parse_header(line) {
+            Some(InputLine::Header(name.to_owned()))
         } else if let Some((name, value)) = Self::parse_definition(line) {
-            InputLine::Definition(name.to_owned(), value.to_owned())
+            Some(InputLine::Definition(name.to_owned(), value.to_owned()))
         } else {
-            InputLine::SyntaxError(line.to_owned())
+            Some(InputLine::SyntaxError(line.to_owned()))
         }
     }
 
