@@ -1,7 +1,6 @@
 
 use std::io::{self, BufRead};
-use std::collections::HashMap;
-use std::collections::hash_map::Keys;
+use std::collections::hash_map::{self, HashMap};
 
 use inputline::InputLine;
 use errors::ParseError;
@@ -24,6 +23,7 @@ fn is_alnum_identifier(s: &str) -> bool {
 /// C identifiers.
 ///
 /// `Scenario`s are created through the `iter_from_file()` function.
+#[derive(Clone, Debug)]
 pub struct Scenario {
     name: String,
     variables: HashMap<String, String>,
@@ -44,24 +44,60 @@ impl Scenario {
     pub fn iter_from_file<F: BufRead>(file: F) -> Result<Iter<F>, ParseError> { Iter::new(file) }
 
     /// Returns an iterator over all variable names.
-    pub fn variable_names(&self) -> Keys<String, String> {
+    pub fn variable_names(&self) -> hash_map::Keys<String, String> {
         self.variables.keys()
+    }
+
+    /// Returns an iterator over all variables.
+    pub fn variable(&self) -> hash_map::Iter<String, String> {
+        self.variables.iter()
+    }
+
+    /// Returns an iterator over all variables.
+    pub fn into_variable(self) -> hash_map::IntoIter<String, String> {
+        self.variables.into_iter()
     }
 
     /// Returns `true` if the variable already exists in this scenario.
     pub fn has_variable(&self, name: &str) -> bool {
-        if let Some(_) = self.variables.get(name) { true } else { false }
+        self.variables.contains_key(name)
+    }
+
+    /// Returns the value of variable named `name`, if it exists.
+    pub fn get_variable(&self, name: &str) -> Option<&str> {
+        self.variables.get(name).map(String::as_str)
     }
 
     /// Returns the name of the scenario.
     pub fn name(&self) -> &str { &self.name }
 
+    /// Merges another scenario into this one.
+    ///
+    /// This combines the names and variables of both scenarios.
+    /// The names get combined with a ", " (comma+space). Variables are
+    /// combined by adding the `other` `HashMap` into `self`'s.
+    /// If both scenarios define the same variable, the value of
+    /// `other`'s takes precedence.
+    pub fn merge(&mut self, other: Scenario) {
+        // Merge names.
+        self.name.reserve(other.name.len()+2);
+        self.name.push_str(", ");
+        self.name.push_str(&other.name);
+        // Merge variables.
+        for (key, value) in other.into_variable() {
+            self.variables.insert(key, value);
+        }
+    }
+
     /// Creates a new scenario.
+    ///
+    /// This method is private. Use `iter_from_file()` instead.
     ///
     /// # Errors
     /// This call fails with `ParseError::InvalidName` if `name`
     /// is the empty string or contains a comma.
-    fn new(name: String) -> Result<Self, ParseError> {
+    fn new<S>(name: S) -> Result<Self, ParseError> where S: Into<String> {
+        let name = name.into();
         if name.is_empty() || name.contains(',') {
             return Err(ParseError::InvalidName(name));
         }
@@ -75,7 +111,11 @@ impl Scenario {
     /// not a valid variable name (`[A-Za-z_][A-Za-z0-9_]+`). It fails
     /// with `ParseError::DuplicateVariable` if a variable of this name
     /// already has been added to the scenario.
-    fn add_variable(&mut self, name: String, value: String) -> Result<(), ParseError> {
+    fn add_variable<S1, S2>(&mut self, name: S1, value: S2) -> Result<(), ParseError>
+        where S1: Into<String>, S2: Into<String>
+    {
+        let name = name.into();
+        let value = value.into();
         if self.has_variable(&name) {
             Err(ParseError::DuplicateVariable(name))
         } else if !is_alnum_identifier(&name) {
@@ -89,6 +129,7 @@ impl Scenario {
 
 
 /// The iterator returned by `Scenario::iter_from_file()`.
+#[derive(Debug)]
 pub struct Iter<F: BufRead> {
     /// The wrapped iterator of input file lines.
     lines: io::Lines<F>,
