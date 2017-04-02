@@ -4,5 +4,9 @@ version = "0.1.0"
 authors = ["Nico Madysa <nico.madysa@tu-dresden.de>"]
 
 [dependencies]
-lazy_static = "*"
 regex = "*"
+lazy_static = "*"
+
+[dependencies.clap]
+version = "*"
+features = ["wrap_help"]
