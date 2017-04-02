@@ -7,6 +7,15 @@ use inputline::InputLine;
 use errors::ParseError;
 
 
+fn is_alnum_identifier(s: &str) -> bool {
+    use regex::Regex;
+    lazy_static!{
+        static ref RE: Regex = Regex::new("^[_[:alpha:]][[:word:]]*$").unwrap();
+    }
+    RE.is_match(s)
+}
+
+
 /// Named set of environment variable definitions.
 ///
 /// A scenario has a name and a set of environment variable definitions.
@@ -182,10 +191,78 @@ impl<F: BufRead> Iterator for Iter<F> {
 }
 
 
-fn is_alnum_identifier(s: &str) -> bool {
-    use regex::Regex;
-    lazy_static!{
-        static ref RE: Regex = Regex::new("^[_[:alpha:]][[:word:]]*$").unwrap();
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[test]
+    fn test_is_alnum_identifier() {
+        assert!(is_alnum_identifier("_"));
+        assert!(is_alnum_identifier("SomeValue"));
+        assert!(is_alnum_identifier("ALL_CAPS_AND_9"));
+        assert!(is_alnum_identifier("l111"));
+        assert!(is_alnum_identifier("__init__"));
+
+
+        assert!(!is_alnum_identifier(""));
+        assert!(!is_alnum_identifier("some value"));
+        assert!(!is_alnum_identifier("Mörder"));
+        assert!(!is_alnum_identifier("7"));
+        assert!(!is_alnum_identifier("1a"));
+        assert!(!is_alnum_identifier("🍣"));
     }
-    RE.is_match(s)
+
+
+    #[test]
+    fn test_scenario_new() {
+        assert!(Scenario::new("A Name").is_ok());
+        assert!(Scenario::new("666").is_ok());
+
+        assert!(Scenario::new("a, b").is_err());
+        assert!(Scenario::new("").is_err());
+    }
+
+
+    #[test]
+    fn test_scenario_add_variable() {
+        let mut s = Scenario::new("name").unwrap();
+        // Adding a variable.
+        assert!(s.add_variable("key", "value").is_ok());
+        // Values may contain spaces.
+        assert!(s.add_variable("key2", "a value").is_ok());
+        // The same variable must not be added twice.
+        assert!(s.add_variable("key", "value").is_err());
+        // Variable names must be C identifiers.
+        assert!(s.add_variable("a key", "value").is_err());
+        // Check that adding occurred.
+        assert!(s.has_variable("key"));
+        assert!(!s.has_variable("a key"));
+    }
+
+
+    #[test]
+    fn test_iter_from_file() {
+        use std::io::Cursor;
+
+        let input = "\
+        [First Scenario]
+        aaaa = 1
+        bbbb = 8
+        cdcd = complicated value
+
+        [Second Scenario]
+        # Comment line
+        aaaa=8
+        bbbb             =1
+        cdcd= lesscomplicated
+
+        [Third Scenario]
+        ";
+        let file = Cursor::new(input);
+        let output = Scenario::iter_from_file(file).unwrap();
+
+        let s = output.next().unwrap();
+        assert_eq!(s.name(), "First Scenario");
+    }
 }
