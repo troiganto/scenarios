@@ -15,8 +15,7 @@ mod cartesian;
 use clap::{Arg, App};
 
 
-static LONG_EXPLANATION: &'static str =
-"This program takes one or more scenario files. A scenario \
+static LONG_EXPLANATION: &'static str = "This program takes one or more scenario files. A scenario \
 is named set of environment variables to apply at the same \
 time. A scenario file contains a list of scenarios in the \
 following format:
@@ -78,24 +77,18 @@ fn main() {
         .about("Run a command line multiple times in different environments.")
         .after_help(LONG_EXPLANATION)
         .help_message("Prints detailed help information")
-        .arg(
-            Arg::with_name("help")
-            .short("h")
-            .help("Prints short help information")
-            )
-        .arg(
-            Arg::with_name("input")
-            .short("i")
-            .takes_value(true)
-            .number_of_values(1)
-            .multiple(true)
-            .help(
-                "Input scenario files. If multiple files are passed, \
+        .arg(Arg::with_name("help")
+                 .short("h")
+                 .help("Prints short help information"))
+        .arg(Arg::with_name("input")
+                 .short("i")
+                 .takes_value(true)
+                 .number_of_values(1)
+                 .multiple(true)
+                 .help("Input scenario files. If multiple files are passed, \
                 all possible combinations between them are used. \
                 Pass \"-\" to read from stdin. You may pass this \
-                option more than once."
-                )
-            );
+                option more than once."));
     let matches = app.clone().get_matches();
 
     if matches.is_present("help") {

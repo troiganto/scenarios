@@ -7,7 +7,7 @@ use std::error::Error;
 #[derive(Debug)]
 pub enum FileParseError {
     IoError(io::Error),
-    ParseError{name: String, inner: ParseError},
+    ParseError { name: String, inner: ParseError },
 }
 
 
@@ -15,10 +15,13 @@ impl Display for FileParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             FileParseError::IoError(ref err) => err.fmt(f),
-            FileParseError::ParseError{ref name, ref inner} => {
+            FileParseError::ParseError {
+                ref name,
+                ref inner,
+            } => {
                 inner.fmt(f)?;
                 write!(f, " in file: {}", name)
-            },
+            }
         }
     }
 }
@@ -28,28 +31,32 @@ impl Error for FileParseError {
     fn description(&self) -> &str {
         match *self {
             FileParseError::IoError(ref err) => err.description(),
-            FileParseError::ParseError{name: _, inner: ref err} => err.description(),
+            FileParseError::ParseError {
+                name: _,
+                inner: ref err,
+            } => err.description(),
         }
     }
 
     fn cause(&self) -> Option<&Error> {
         match *self {
             FileParseError::IoError(ref err) => Some(err),
-            FileParseError::ParseError{ref inner, ..} => Some(inner),
+            FileParseError::ParseError { ref inner, .. } => Some(inner),
         }
     }
 }
 
 
 impl From<io::Error> for FileParseError {
-    fn from(err: io::Error) -> Self { FileParseError::IoError(err) }
+    fn from(err: io::Error) -> Self {
+        FileParseError::IoError(err)
+    }
 }
 
 
 /// Errors caused during parsing a scenarios description.
 #[derive(Debug)]
 pub enum ParseError {
-
     DuplicateName(String),
     DuplicateVariable(String),
 
@@ -109,5 +116,7 @@ impl Error for ParseError {
 
 
 impl From<io::Error> for ParseError {
-    fn from(err: io::Error) -> Self { ParseError::IoError(err) }
+    fn from(err: io::Error) -> Self {
+        ParseError::IoError(err)
+    }
 }

@@ -38,7 +38,10 @@ impl Scenario {
         if name.is_empty() || name.contains(',') {
             return Err(ParseError::InvalidName(name));
         }
-        Ok(Scenario{name: name, variables: HashMap::new()})
+        Ok(Scenario {
+               name: name,
+               variables: HashMap::new(),
+           })
     }
 
     /// Adds another variable definition of the current set.
@@ -49,9 +52,8 @@ impl Scenario {
     /// with `ParseError::DuplicateVariable` if a variable of this name
     /// already has been added to the scenario.
     pub fn add_variable<S1, S2>(&mut self, name: S1, value: S2) -> Result<(), ParseError>
-    where
-        S1: Into<String>,
-        S2: Into<String>,
+        where S1: Into<String>,
+              S2: Into<String>
     {
         let name = name.into();
         let value = value.into();
@@ -66,7 +68,9 @@ impl Scenario {
     }
 
     /// Returns the name of the scenario.
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 
     /// Returns `true` if the variable already exists in this scenario.
     pub fn has_variable(&self, name: &str) -> bool {
@@ -102,7 +106,7 @@ impl Scenario {
     /// `other`'s takes precedence.
     pub fn merge(&mut self, other: Scenario) {
         // Merge names.
-        self.name.reserve(other.name.len()+2);
+        self.name.reserve(other.name.len() + 2);
         self.name.push_str(", ");
         self.name.push_str(&other.name);
         // Merge variables.

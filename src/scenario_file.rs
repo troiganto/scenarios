@@ -14,7 +14,7 @@ use inputline::InputLine;
 #[derive(Clone, Debug)]
 pub struct ScenarioFile {
     name: String,
-    scenarios: Vec<Scenario>
+    scenarios: Vec<Scenario>,
 }
 
 impl ScenarioFile {
@@ -45,32 +45,47 @@ impl ScenarioFile {
     /// there is a syntax error before finding the first scenario or if
     /// any I/O error occurs.
     pub fn with_name<S, F>(name: S, file: F) -> Result<Self, FileParseError>
-    where
-        S: Into<String>,
-        F: BufRead,
+        where S: Into<String>,
+              F: BufRead
     {
-        let mut result = ScenarioFile{name: name.into(), scenarios: Vec::new()};
+        let mut result = ScenarioFile {
+            name: name.into(),
+            scenarios: Vec::new(),
+        };
 
         let iter = match ScenariosIter::new(file) {
             Ok(iter) => iter,
-            Err(err) => { return Err(result.into_error(err)); },
+            Err(err) => {
+                return Err(result.into_error(err));
+            }
         };
         for s in iter {
             match s {
-                Ok(s) => { result.scenarios.push(s); }
-                Err(err) => { return Err(result.into_error(err)); },
+                Ok(s) => {
+                    result.scenarios.push(s);
+                }
+                Err(err) => {
+                    return Err(result.into_error(err));
+                }
             };
         }
 
         Ok(result)
     }
 
-    pub fn as_slice(&self) -> &[Scenario] { self.scenarios.as_slice() }
+    pub fn as_slice(&self) -> &[Scenario] {
+        self.scenarios.as_slice()
+    }
 
-    pub fn iter(&self) -> ::std::slice::Iter<Scenario> { self.scenarios.iter() }
+    pub fn iter(&self) -> ::std::slice::Iter<Scenario> {
+        self.scenarios.iter()
+    }
 
     fn into_error(self, err: ParseError) -> FileParseError {
-        FileParseError::ParseError{name: self.name, inner: err}
+        FileParseError::ParseError {
+            name: self.name,
+            inner: err,
+        }
     }
 }
 
@@ -94,7 +109,10 @@ impl<F: BufRead> ScenariosIter<F> {
     /// # Errors
     /// See `scan_to_first_header()` for a description of error modes.
     fn new(file: F) -> Result<Self, ParseError> {
-        let mut iter = ScenariosIter{lines: file.lines(), next_header: None};
+        let mut iter = ScenariosIter {
+            lines: file.lines(),
+            next_header: None,
+        };
         iter.scan_to_first_header()?;
         Ok(iter)
     }
@@ -114,16 +132,10 @@ impl<F: BufRead> ScenariosIter<F> {
             InputLine::Header(name) => {
                 self.next_header = Some(name);
                 Ok(())
-            },
-            InputLine::Definition(name, _) => {
-                Err(ParseError::UnexpectedVarDef(name))
-            },
-            InputLine::None => {
-                Err(ParseError::NoScenario)
-            },
-            InputLine::SyntaxError(line) => {
-                Err(ParseError::SyntaxError(line))
-            },
+            }
+            InputLine::Definition(name, _) => Err(ParseError::UnexpectedVarDef(name)),
+            InputLine::None => Err(ParseError::NoScenario),
+            InputLine::SyntaxError(line) => Err(ParseError::SyntaxError(line)),
         }
     }
 
@@ -146,17 +158,17 @@ impl<F: BufRead> ScenariosIter<F> {
             match InputLine::from_io(&mut self.lines)? {
                 InputLine::Definition(name, value) => {
                     result.add_variable(name, value)?;
-                },
+                }
                 InputLine::Header(name) => {
                     self.next_header = Some(name);
                     break;
-                },
+                }
                 InputLine::None => {
                     break;
-                },
+                }
                 InputLine::SyntaxError(line) => {
                     return Err(ParseError::SyntaxError(line));
-                },
+                }
             }
         }
         Ok(result)
@@ -164,7 +176,7 @@ impl<F: BufRead> ScenariosIter<F> {
 }
 
 impl<F: BufRead> Iterator for ScenariosIter<F> {
-    type Item=Result<Scenario, ParseError>;
+    type Item = Result<Scenario, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Take the header line out of `self.next_header` so that

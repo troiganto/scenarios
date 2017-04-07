@@ -50,7 +50,9 @@ impl InputLine {
     ///
     /// If the iterator is exhausted without finding another
     /// non-comment line, `InputLine::None` is returned.
-    pub fn from_iter<I>(lines: &mut I) -> Self where I: Iterator<Item=String> {
+    pub fn from_iter<I>(lines: &mut I) -> Self
+        where I: Iterator<Item = String>
+    {
         for line in lines {
             if let Some(line) = Self::from_line(&line) {
                 return line;
@@ -61,7 +63,7 @@ impl InputLine {
 
     /// Like `from_iter()`, but meant for use with `BufRead::lines()`.
     pub fn from_io<I>(lines: &mut I) -> io::Result<Self>
-        where I: Iterator<Item=io::Result<String>>
+        where I: Iterator<Item = io::Result<String>>
     {
         for line in lines {
             if let Some(line) = Self::from_line(&line?) {
@@ -90,14 +92,16 @@ impl InputLine {
     }
 
     /// Checks if a line is blank or a comment.
-    fn is_ignorable(s: &str) -> bool { s.is_empty() || s.starts_with('#') }
+    fn is_ignorable(s: &str) -> bool {
+        s.is_empty() || s.starts_with('#')
+    }
 
     /// If `s` is a header line, return the contents of the brackets.
     ///
     /// If `s` is not a header line, return `None`.
     fn parse_header(s: &str) -> Option<&str> {
         if s.starts_with('[') && s.ends_with(']') && s.len() > 2 {
-            Some(s[1..s.len()-1].trim())
+            Some(s[1..s.len() - 1].trim())
         } else {
             None
         }
@@ -123,24 +127,24 @@ mod tests {
 
     #[test]
     fn test_vec() {
-        let input = vec![
-            "[test]",
-            "first = 1",
-            "second = 2",
-            "third = 3",
-            "",
-            "",
-            "# comment",
-            "[test]",
-        ];
+        let input = vec!["[test]",
+                         "first = 1",
+                         "second = 2",
+                         "third = 3",
+                         "",
+                         "",
+                         "# comment",
+                         "[test]"];
         let mut it = input.into_iter().map(String::from);
-        assert_eq!(InputLine::from_iter(&mut it), InputLine::Header("test".into()));
+        assert_eq!(InputLine::from_iter(&mut it),
+                   InputLine::Header("test".into()));
         assert_eq!(InputLine::from_iter(&mut it),
                    InputLine::Definition("first".into(), "1".into()));
         assert_eq!(InputLine::from_iter(&mut it),
                    InputLine::Definition("second".into(), "2".into()));
         assert_eq!(InputLine::from_iter(&mut it),
                    InputLine::Definition("third".into(), "3".into()));
-        assert_eq!(InputLine::from_iter(&mut it), InputLine::Header("test".into()));
+        assert_eq!(InputLine::from_iter(&mut it),
+                   InputLine::Header("test".into()));
     }
 }
