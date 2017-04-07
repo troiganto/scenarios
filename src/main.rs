@@ -9,6 +9,7 @@ mod errors;
 mod inputline;
 mod scenario;
 mod scenario_file;
+mod cartesian;
 
 
 use clap::{Arg, App};
