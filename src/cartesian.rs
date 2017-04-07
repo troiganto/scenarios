@@ -1,14 +1,18 @@
 
 use std::iter;
 
-pub struct Product<'a, T: 'a> {
-    collections: &'a [Vec<T>],
-    iterators: Vec<::std::slice::Iter<'a, T>>,
+pub struct Product<'a, C: 'a, T: 'a>
+    where &'a C: IntoIterator<Item = &'a T>
+{
+    collections: &'a [C],
+    iterators: Vec<<&'a C as IntoIterator>::IntoIter>,
     next_item: Vec<Option<&'a T>>,
 }
 
-impl<'a, T> Product<'a, T> {
-    pub fn new(collections: &'a [Vec<T>]) -> Self {
+impl<'a, C, T> Product<'a, C, T>
+    where &'a C: IntoIterator<Item = &'a T>
+{
+    pub fn new(collections: &'a [C]) -> Self {
         // Create an unitialized object.
         // we have to fill `iterators` and `next_item`.
         let len = collections.len();
@@ -59,12 +63,8 @@ impl<'a, T> Product<'a, T> {
                 .rev() {
             *element = iterator.next();
             match *element {
-                Some(_) => {
-                    break;
-                }
-                None => {
-                    *iterator = collection.iter();
-                }
+                Some(_) => break,
+                None => *iterator = collection.into_iter(),
             }
         }
         // Here, `next_item` consists of Somes on the left and Nones on
@@ -82,7 +82,9 @@ impl<'a, T> Product<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for Product<'a, T> {
+impl<'a, C, T> Iterator for Product<'a, C, T>
+    where &'a C: IntoIterator<Item = &'a T>
+{
     type Item = Vec<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -120,21 +122,39 @@ mod tests {
 
     #[test]
     fn test_i32() {
-        let all_collections: Vec<Vec<u32>> =
-            vec![vec![0, 16, 32, 48], vec![0, 4, 8, 12], vec![0, 1, 2, 3]];
-        let expected: Vec<u32> = (0..64u32).collect();
-        let actual: Vec<u32> = Product::new(&all_collections)
+        let numbers: Vec<Vec<u32>> = vec![vec![0, 16, 32, 48], vec![0, 4, 8, 12], vec![0, 1, 2, 3]];
+        let expected: Vec<u32> = (0..64).collect();
+        let actual: Vec<u32> = Product::new(&numbers)
             .map(|combos| combos.into_iter().sum())
             .collect();
         assert_eq!(expected, actual);
     }
+
+    #[test]
+    fn test_string() {
+        let letters = [["A".to_string(), "B".to_string()],
+                       ["a".to_string(), "b".to_string()]];
+        let expected = vec!["Aa".to_string(),
+                            "Ab".to_string(),
+                            "Ba".to_string(),
+                            "Bb".to_string()];
+        let actual: Vec<String> = Product::new(&letters)
+            .map(|combos| {
+                     let mut combined = String::new();
+                     combined.extend(combos.into_iter().map(String::as_str));
+                     combined
+                 })
+            .collect();
+        assert_eq!(expected, actual);
+    }
+
     #[test]
     fn test_slices() {
         let bits: [[u8; 2]; 4] = [[0, 8], [0, 4], [0, 2], [0, 1]];
-        //~ let expected: Vec<u32> = (0..64u32).collect();
-        //~ let actual: Vec<u32> = Product::new(&all_collections)
-        //~ .map(|combos| combos.into_iter().sum())
-        //~ .collect();
-        //~ assert_eq!(expected, actual);
+        let expected: Vec<u8> = (0..16).collect();
+        let actual: Vec<u8> = Product::new(&bits)
+            .map(|combos| combos.into_iter().sum())
+            .collect();
+        assert_eq!(expected, actual);
     }
 }
