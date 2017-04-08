@@ -1,4 +1,5 @@
 
+
 pub struct Product<'a, C: 'a, T: 'a>
     where &'a C: IntoIterator<Item = &'a T>
 {
@@ -7,30 +8,32 @@ pub struct Product<'a, C: 'a, T: 'a>
     next_item: Vec<Option<&'a T>>,
 }
 
+pub fn product<'a, C: 'a, T: 'a>(collections: &'a [C]) -> Product<'a, C, T>
+    where &'a C: IntoIterator<Item = &'a T>
+{
+    // Create an unitialized object.
+    // we have to fill `iterators` and `next_item`.
+    let len = collections.len();
+    let mut product = Product {
+        collections: collections,
+        iterators: Vec::with_capacity(len),
+        next_item: ::std::iter::repeat(None).take(len).collect(),
+    };
+
+    // Create one brand-new iterator per collection.
+    for collection in product.collections {
+        product.iterators.push(collection.into_iter());
+    }
+
+    // Fill `next_item`, which is full of Nones until now.
+    product.fill_up_next_item();
+
+    product
+}
+
 impl<'a, C, T> Product<'a, C, T>
     where &'a C: IntoIterator<Item = &'a T>
 {
-    pub fn new(collections: &'a [C]) -> Self {
-        // Create an unitialized object.
-        // we have to fill `iterators` and `next_item`.
-        let len = collections.len();
-        let mut product = Self {
-            collections: collections,
-            iterators: Vec::with_capacity(len),
-            next_item: ::std::iter::repeat(None).take(len).collect(),
-        };
-
-        // Create one brand-new iterator per collection.
-        for collection in product.collections {
-            product.iterators.push(collection.into_iter());
-        }
-
-        // Fill `next_item`, which is full of Nones until now.
-        product.fill_up_next_item();
-
-        product
-    }
-
     fn fill_up_next_item(&mut self) {
         for (iterator, element) in
             self.iterators
@@ -108,11 +111,13 @@ impl<'a, C, T> Iterator for Product<'a, C, T>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::cartesian;
 
     fn assert_length<T>(vectors: &Vec<Vec<T>>) {
         let expected_len: usize = vectors.iter().map(Vec::len).product();
-        let actual_len: usize = Product::new(vectors).collect::<Vec<Vec<&T>>>().len();
+        let actual_len: usize = cartesian::product(vectors)
+            .collect::<Vec<Vec<&T>>>()
+            .len();
         assert_eq!(expected_len, actual_len);
     }
 
@@ -131,7 +136,7 @@ mod tests {
     #[test]
     fn test_empty() {
         let one_is_empty = [vec![0; 3], vec![0; 3], vec![0; 0]];
-        let empty_product: Vec<_> = Product::new(&one_is_empty).collect();
+        let empty_product: Vec<_> = cartesian::product(&one_is_empty).collect();
         assert_eq!(empty_product.len(), 0);
     }
 
@@ -139,7 +144,7 @@ mod tests {
     fn test_i32() {
         let numbers: Vec<Vec<u32>> = vec![vec![0, 16, 32, 48], vec![0, 4, 8, 12], vec![0, 1, 2, 3]];
         let expected: Vec<u32> = (0..64).collect();
-        let actual: Vec<u32> = Product::new(&numbers)
+        let actual: Vec<u32> = cartesian::product(&numbers)
             .map(Vec::into_iter)
             .map(Iterator::sum)
             .collect();
@@ -156,7 +161,7 @@ mod tests {
                             "Ab".to_string(),
                             "Ba".to_string(),
                             "Bb".to_string()];
-        let actual: Vec<String> = Product::new(&letters)
+        let actual: Vec<String> = cartesian::product(&letters)
             .map(|combo| combo.into_iter().map(String::as_str))
             .map(String::from_iter)
             .collect();
@@ -167,7 +172,7 @@ mod tests {
     fn test_slices() {
         let bits: [[u8; 2]; 4] = [[0, 8], [0, 4], [0, 2], [0, 1]];
         let expected: Vec<u8> = (0..16).collect();
-        let actual: Vec<u8> = Product::new(&bits)
+        let actual: Vec<u8> = cartesian::product(&bits)
             .map(Vec::into_iter)
             .map(Iterator::sum)
             .collect();
