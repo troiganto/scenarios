@@ -1,6 +1,4 @@
 
-use std::iter;
-
 pub struct Product<'a, C: 'a, T: 'a>
     where &'a C: IntoIterator<Item = &'a T>
 {
@@ -19,7 +17,7 @@ impl<'a, C, T> Product<'a, C, T>
         let mut product = Self {
             collections: collections,
             iterators: Vec::with_capacity(len),
-            next_item: iter::repeat(None).take(len).collect(),
+            next_item: ::std::iter::repeat(None).take(len).collect(),
         };
 
         // Create one brand-new iterator per collection.
@@ -92,7 +90,7 @@ impl<'a, C, T> Iterator for Product<'a, C, T>
             // If any element is None, it means at least one of the
             // sub-iterators is exhausted and this iterator is
             // exhausted as a whole. We are done then.
-            return None;
+            None
         } else {
             // None of the elements is `None`, this means we can simply
             // unwrap them.
@@ -112,12 +110,29 @@ impl<'a, C, T> Iterator for Product<'a, C, T>
 mod tests {
     use super::*;
 
+    fn assert_length<T>(vectors: &Vec<Vec<T>>) {
+        let expected_len: usize = vectors.iter().map(Vec::len).product();
+        let actual_len: usize = Product::new(vectors).collect::<Vec<Vec<&T>>>().len();
+        assert_eq!(expected_len, actual_len);
+    }
+
     #[test]
     fn test_len() {
-        let all_collections = vec![vec![1, 1, 1, 1], vec![2, 2, 2, 2], vec![3, 3, 3, 3]];
-        let expected_len = all_collections.iter().map(|v| v.len()).product();
-        let combinations: Vec<_> = Product::new(&all_collections).collect();
-        assert_eq!(combinations.len(), expected_len);
+        let vectors = vec![vec![1, 1, 1, 1], vec![2, 2, 2, 2], vec![3, 3, 3, 3]];
+        assert_length(&vectors);
+    }
+
+    #[test]
+    fn test_unequal_length() {
+        let vectors = vec![vec![1, 1], vec![2, 2, 2, 2], vec![3]];
+        assert_length(&vectors);
+    }
+
+    #[test]
+    fn test_empty() {
+        let one_is_empty = [vec![0; 3], vec![0; 3], vec![0; 0]];
+        let empty_product: Vec<_> = Product::new(&one_is_empty).collect();
+        assert_eq!(empty_product.len(), 0);
     }
 
     #[test]
@@ -125,13 +140,16 @@ mod tests {
         let numbers: Vec<Vec<u32>> = vec![vec![0, 16, 32, 48], vec![0, 4, 8, 12], vec![0, 1, 2, 3]];
         let expected: Vec<u32> = (0..64).collect();
         let actual: Vec<u32> = Product::new(&numbers)
-            .map(|combos| combos.into_iter().sum())
+            .map(Vec::into_iter)
+            .map(Iterator::sum)
             .collect();
         assert_eq!(expected, actual);
     }
 
     #[test]
     fn test_string() {
+        use std::iter::FromIterator;
+
         let letters = [["A".to_string(), "B".to_string()],
                        ["a".to_string(), "b".to_string()]];
         let expected = vec!["Aa".to_string(),
@@ -139,11 +157,8 @@ mod tests {
                             "Ba".to_string(),
                             "Bb".to_string()];
         let actual: Vec<String> = Product::new(&letters)
-            .map(|combos| {
-                     let mut combined = String::new();
-                     combined.extend(combos.into_iter().map(String::as_str));
-                     combined
-                 })
+            .map(|combo| combo.into_iter().map(String::as_str))
+            .map(String::from_iter)
             .collect();
         assert_eq!(expected, actual);
     }
@@ -153,7 +168,8 @@ mod tests {
         let bits: [[u8; 2]; 4] = [[0, 8], [0, 4], [0, 2], [0, 1]];
         let expected: Vec<u8> = (0..16).collect();
         let actual: Vec<u8> = Product::new(&bits)
-            .map(|combos| combos.into_iter().sum())
+            .map(Vec::into_iter)
+            .map(Iterator::sum)
             .collect();
         assert_eq!(expected, actual);
     }
