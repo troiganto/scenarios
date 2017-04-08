@@ -1,5 +1,7 @@
+//! Module that provides the function `cartesian::product()`. The
+//! name has been chosen entirely for this combination.
 
-
+/// Iterator over the Cartesian product of some sub-iterators.
 pub struct Product<'a, C: 'a, T: 'a>
     where &'a C: IntoIterator<Item = &'a T>
 {
@@ -8,6 +10,51 @@ pub struct Product<'a, C: 'a, T: 'a>
     next_item: Vec<Option<&'a T>>,
 }
 
+/// Iterates over Cartesian product of a list of containers.
+///
+/// This essentially does the same as the macro `itertools::iproduct`,
+/// but the number of arguments may be decided at run-time.
+/// In return, this function requires that all passed iterators
+/// yield items of the same type, whereas the iterators passed to
+/// `itertools::iproduct` may be heterogenous.
+///
+/// The trait bounds are as follows: The argument to this function must
+/// be an immutable slice of containers `C` with items `T`. *Immutable
+/// references* to these containers must be convertible to iterators
+/// (over `&T`). This is necessary because `product()` needs to iterate
+/// over these containers multiple times, so calling `into_iter` must
+/// not consume the passed containers. Finally, the lifetime `'a` ties
+/// all the used references to the reference originally passed to
+/// `product()`.
+///
+/// # Example
+///
+/// ```rust
+/// extern crate scenarios;
+///
+/// use scenarios::cartesian;
+///
+/// let slices = [[1, 2], [11, 22]];
+/// let combinations = cartesian::product(&slices);
+/// assert_eq!(combinations.next(), Some(vec![1, 11]));
+/// assert_eq!(combinations.next(), Some(vec![1, 22]));
+/// assert_eq!(combinations.next(), Some(vec![2, 11]));
+/// assert_eq!(combinations.next(), Some(vec![2, 22]));
+/// assert_eq!(combinations.next(), None);
+/// ```
+///
+/// Note that if any one of the passed containers is empty, the product
+/// as a whole is an empty iterator, too.
+///
+/// ```rust
+/// extern crate scenarios;
+///
+/// use scenarios::cartesian;
+///
+/// let vectors = [vec![1, 2], vec![11, 22], vec![]];
+/// let combinations = cartesian::product(&slices);
+/// assert_eq!(combinations.next(), None);
+/// ```
 pub fn product<'a, C: 'a, T: 'a>(collections: &'a [C]) -> Product<'a, C, T>
     where &'a C: IntoIterator<Item = &'a T>
 {
