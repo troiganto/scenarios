@@ -1,7 +1,7 @@
 
 use std::collections::hash_map::{self, HashMap};
-
-use errors::ScenarioError;
+use std::error::Error;
+use std::fmt::{self, Display};
 
 
 fn is_alnum_identifier(s: &str) -> bool {
@@ -18,9 +18,8 @@ fn is_alnum_identifier(s: &str) -> bool {
 /// A scenario has a name and a set of environment variable definitions.
 /// Each definition has an associated variable name and the corresponding
 /// value, both strings. A variable name must follow the rules for regular
-/// C identifiers.
-///
-/// `Scenario`s are created through the `iter_from_file()` function.
+/// C identifiers. A scenario name must be non-empty and must not contain
+/// the character `','` (comma).
 #[derive(Clone, Debug)]
 pub struct Scenario {
     name: String,
@@ -113,6 +112,46 @@ impl Scenario {
         for (key, value) in other.into_variables() {
             self.variables.insert(key, value);
         }
+    }
+}
+
+
+/// Errors caused during building a scenario.
+#[derive(Debug)]
+pub enum ScenarioError {
+    /// The name contains invalid characters.
+    InvalidName(String),
+    /// The variable name contains invalid characters.
+    InvalidVariable(String),
+    /// A variable of this name has been added before.
+    DuplicateVariable(String),
+}
+
+impl Display for ScenarioError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::ScenarioError::*;
+
+        match *self {
+            InvalidName(ref name) => write!(f, "{}: {:?}", self.description(), name),
+            InvalidVariable(ref name) => write!(f, "{}: {:?}", self.description(), name),
+            DuplicateVariable(ref name) => write!(f, "{}: {:?}", self.description(), name),
+        }
+    }
+}
+
+impl Error for ScenarioError {
+    fn description(&self) -> &str {
+        use self::ScenarioError::*;
+
+        match *self {
+            InvalidName(_) => "invalid name",
+            InvalidVariable(_) => "invalid variable name",
+            DuplicateVariable(_) => "duplicate variable",
+        }
+    }
+
+    fn cause(&self) -> Option<&Error> {
+        None
     }
 }
 

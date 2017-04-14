@@ -1,7 +1,7 @@
 
 use std::str::FromStr;
-
-use errors::ParseError;
+use std::error::Error;
+use std::fmt::{self, Display};
 
 
 /// Type that defines how each line of an input file is interpreted.
@@ -42,7 +42,7 @@ pub enum InputLine {
 }
 
 impl FromStr for InputLine {
-    type Err = ParseError;
+    type Err = SyntaxError;
 
     /// Parses a line and decide how to interpret it.
     fn from_str(line: &str) -> Result<Self, Self::Err> {
@@ -54,7 +54,7 @@ impl FromStr for InputLine {
         } else if let Some((name, value)) = Self::try_parse_definition(line) {
             Ok(InputLine::Definition(name.to_owned(), value.to_owned()))
         } else {
-            Err(ParseError::new(line))
+            Err(SyntaxError::new(line))
         }
     }
 }
@@ -89,6 +89,59 @@ impl InputLine {
         } else {
             None
         }
+    }
+}
+
+
+/// Error caused by a line not adhering to the syntax described in
+/// the documentation for `InputLine`.
+#[derive(Debug)]
+pub struct SyntaxError {
+    line: String,
+    lineno: Option<u32>,
+    filename: Option<String>,
+}
+
+impl SyntaxError {
+    pub fn new<S: Into<String>>(line: S) -> Self {
+        SyntaxError {
+            line: line.into(),
+            lineno: None,
+            filename: None,
+        }
+    }
+
+    /// Enrich the error with the number of the offending line.
+    pub fn set_lineno(&mut self, lineno: u32) {
+        self.lineno = Some(lineno);
+    }
+
+    /// Enrich the error with the name of the file containing the
+    /// offending line.
+    pub fn set_filename<S: Into<String>>(&mut self, filename: S) {
+        self.filename = Some(filename.into());
+    }
+}
+
+impl Display for SyntaxError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match (&self.lineno, &self.filename) {
+            (&Some(lineno), &Some(ref fname)) => {
+                write!(f, "in file {}, line {}: {}", fname, lineno, self.line)
+            }
+            (&None, &Some(ref fname)) => write!(f, "in file {}: {}", fname, self.line),
+            (&Some(lineno), &None) => write!(f, "in line {}: {}", lineno, self.line),
+            (&None, &None) => write!(f, "{}", self.line),
+        }
+    }
+}
+
+impl Error for SyntaxError {
+    fn description(&self) -> &str {
+        "syntax error while reading scenarios file"
+    }
+    fn cause(&self) -> Option<&Error> {
+        None
     }
 }
 
