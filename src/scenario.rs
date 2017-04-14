@@ -1,7 +1,7 @@
 
 use std::collections::hash_map::{self, HashMap};
 
-use errors::ParseError;
+use errors::ScenarioError;
 
 
 fn is_alnum_identifier(s: &str) -> bool {
@@ -33,10 +33,10 @@ impl Scenario {
     /// # Errors
     /// This call fails with `ParseError::InvalidName` if `name`
     /// is the empty string or contains a comma.
-    pub fn new<S: Into<String>>(name: S) -> Result<Self, ParseError> {
+    pub fn new<S: Into<String>>(name: S) -> Result<Self, ScenarioError> {
         let name = name.into();
         if name.is_empty() || name.contains(',') {
-            return Err(ParseError::InvalidName(name));
+            return Err(ScenarioError::InvalidName(name));
         }
         Ok(Scenario {
                name: name,
@@ -51,16 +51,16 @@ impl Scenario {
     /// not a valid variable name (`[A-Za-z_][A-Za-z0-9_]+`). It fails
     /// with `ParseError::DuplicateVariable` if a variable of this name
     /// already has been added to the scenario.
-    pub fn add_variable<S1, S2>(&mut self, name: S1, value: S2) -> Result<(), ParseError>
+    pub fn add_variable<S1, S2>(&mut self, name: S1, value: S2) -> Result<(), ScenarioError>
         where S1: Into<String>,
               S2: Into<String>
     {
         let name = name.into();
         let value = value.into();
         if self.has_variable(&name) {
-            Err(ParseError::DuplicateVariable(name))
+            Err(ScenarioError::DuplicateVariable(name))
         } else if !is_alnum_identifier(&name) {
-            Err(ParseError::InvalidVariable(name))
+            Err(ScenarioError::InvalidVariable(name))
         } else {
             self.variables.insert(name, value);
             Ok(())

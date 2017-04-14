@@ -1,20 +1,23 @@
 
-use std::io;
+use std::str::FromStr;
+
+use errors::ParseError;
 
 
 /// Type that defines how each line of an input file is interpreted.
 ///
-/// Input files are read line by line and each line can be either:
+/// Input files are read line by line. Surrounding whitespace is
+/// stripped from all lines before processing. Each line can be one
+/// of the following:
 ///
-/// 1. A header line, surrounded by brackets; or
-/// 2. A definition line, containing an equals sign;
+/// 1. if it is blank or it starts with a hash sign `#`, it is a
+///    comment;
+/// 2. if it is surrounded by square brackets `[` and `]`, it is a
+///    header line;
+/// 3. if it contains at least one equals sign, it is a definition
+///    line.
 ///
 /// Anything else is considered a syntax error.
-///
-/// Additionally, lines whose first non-whitespace characters is a pound
-/// sign are intepreted as comments and ignored completely. Furthermore,
-/// all leading and trailing whitespace is stripped before interpretation
-/// begins.
 ///
 /// # Example
 ///
@@ -30,77 +33,45 @@ use std::io;
 /// ```
 #[derive(Debug, PartialEq)]
 pub enum InputLine {
-    /// No input file was retrieved.
-    None,
-    /// A header. Contains the part within the brackets.
+    /// A comment line. Disregarded completely.
+    Comment,
+    /// A header line. Contains the part within the brackets.
     Header(String),
-    /// A definition. Contains the part before and after the equal sign.
+    /// A definition. Contains the part before and after the first equal sign.
     Definition(String, String),
-    /// An error. Contains the offending line.
-    SyntaxError(String),
+}
+
+impl FromStr for InputLine {
+    type Err = ParseError;
+
+    /// Parses a line and decide how to interpret it.
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        let line = line.trim();
+        if Self::is_comment(line) {
+            Ok(InputLine::Comment)
+        } else if let Some(name) = Self::try_parse_header(line) {
+            Ok(InputLine::Header(name.to_owned()))
+        } else if let Some((name, value)) = Self::try_parse_definition(line) {
+            Ok(InputLine::Definition(name.to_owned(), value.to_owned()))
+        } else {
+            Err(ParseError::new(line))
+        }
+    }
 }
 
 impl InputLine {
-    /// Gets the next non-comment input line from an iterator of lines.
-    ///
-    /// This iterates over the input, dropping all blank or comment
-    /// lines. The first non-comment line then is parsed as an
-    /// `InputLine` and returned. The iterator may be used further
-    /// after the call.
-    ///
-    /// If the iterator is exhausted without finding another
-    /// non-comment line, `InputLine::None` is returned.
-    pub fn from_iter<I>(lines: &mut I) -> Self
-        where I: Iterator<Item = String>
-    {
-        for line in lines {
-            if let Some(line) = Self::from_line(&line) {
-                return line;
-            }
-        }
-        InputLine::None
-    }
-
-    /// Like `from_iter()`, but meant for use with `BufRead::lines()`.
-    pub fn from_io<I>(lines: &mut I) -> io::Result<Self>
-        where I: Iterator<Item = io::Result<String>>
-    {
-        for line in lines {
-            if let Some(line) = Self::from_line(&line?) {
-                return Ok(line);
-            }
-        }
-        Ok(InputLine::None)
-    }
-
-    /// Parses a line and decide how to interpret it.
-    ///
-    /// If the passed line is blank or a comment (ignoring surrounding
-    /// whitespace), this function returns `None`. Otherwise, it
-    /// returns some interpreted result.
-    fn from_line(line: &str) -> Option<Self> {
-        let line = line.trim();
-        if Self::is_ignorable(line) {
-            None
-        } else if let Some(name) = Self::parse_header(line) {
-            Some(InputLine::Header(name.to_owned()))
-        } else if let Some((name, value)) = Self::parse_definition(line) {
-            Some(InputLine::Definition(name.to_owned(), value.to_owned()))
-        } else {
-            Some(InputLine::SyntaxError(line.to_owned()))
-        }
-    }
-
     /// Checks if a line is blank or a comment.
-    fn is_ignorable(s: &str) -> bool {
+    fn is_comment(s: &str) -> bool {
         s.is_empty() || s.starts_with('#')
     }
 
     /// If `s` is a header line, return the contents of the brackets.
     ///
     /// If `s` is not a header line, return `None`.
-    fn parse_header(s: &str) -> Option<&str> {
-        if s.starts_with('[') && s.ends_with(']') && s.len() > 2 {
+    fn try_parse_header(s: &str) -> Option<&str> {
+        if s.starts_with('[') && s.ends_with(']') {
+            // Should be safe because '[' and ']' are one byte long
+            // in UTF-8.
             Some(s[1..s.len() - 1].trim())
         } else {
             None
@@ -110,10 +81,11 @@ impl InputLine {
     /// If `s` is a definition, return the split contents.
     ///
     /// If `s` is not a header line, return `None`.
-    fn parse_definition(s: &str) -> Option<(&str, &str)> {
+    fn try_parse_definition(s: &str) -> Option<(&str, &str)> {
         if let Some(n) = s.find('=') {
-            let (name, value) = s.split_at(n);
-            Some((name.trim(), value[1..].trim()))
+            let (name, value_and_equals) = s.split_at(n);
+            let value = &value_and_equals[1..];
+            Some((name.trim(), value.trim()))
         } else {
             None
         }
@@ -125,26 +97,61 @@ impl InputLine {
 mod tests {
     use super::*;
 
+    fn assert_eq_header(line: &str, expected_header: &str) {
+        assert_eq!(line.parse::<InputLine>().unwrap(),
+                   InputLine::Header(expected_header.into()));
+    }
+
+
+    fn assert_eq_vardef(line: &str, expected_var: &str, expected_def: &str) {
+        assert_eq!(line.parse::<InputLine>().unwrap(),
+                   InputLine::Definition(expected_var.into(), expected_def.into()));
+    }
+
+
+    fn assert_eq_comment(line: &str) {
+        assert_eq!(line.parse::<InputLine>().unwrap(), InputLine::Comment);
+    }
+
+
     #[test]
-    fn test_vec() {
-        let input = vec!["[test]",
-                         "first = 1",
-                         "second = 2",
-                         "third = 3",
-                         "",
-                         "",
-                         "# comment",
-                         "[test]"];
-        let mut it = input.into_iter().map(String::from);
-        assert_eq!(InputLine::from_iter(&mut it),
-                   InputLine::Header("test".into()));
-        assert_eq!(InputLine::from_iter(&mut it),
-                   InputLine::Definition("first".into(), "1".into()));
-        assert_eq!(InputLine::from_iter(&mut it),
-                   InputLine::Definition("second".into(), "2".into()));
-        assert_eq!(InputLine::from_iter(&mut it),
-                   InputLine::Definition("third".into(), "3".into()));
-        assert_eq!(InputLine::from_iter(&mut it),
-                   InputLine::Header("test".into()));
+    fn test_header() {
+        assert_eq_header("[Header]", "Header");
+        assert_eq_header(" [  Whitespaced\tHeader  ]\n\n", "Whitespaced\tHeader");
+        assert_eq_header("[Header = with = equals]", "Header = with = equals");
+        assert_eq_header("[#Pound sign header]", "#Pound sign header");
+        assert_eq_header("[]", "");
+        assert!("[Bad header".parse::<InputLine>().is_err());
+    }
+
+
+    #[test]
+    fn test_definition() {
+        assert_eq_vardef("var=def", "var", "def");
+        assert_eq_vardef("var = def", "var", "def");
+        assert_eq_vardef("   var\n=\ndef\t", "var", "def");
+        assert_eq_vardef("var = def = def", "var", "def = def");
+        assert_eq_vardef("var = #def", "var", "#def");
+        assert_eq_vardef("v#ar = def", "v#ar", "def");
+        assert_eq_vardef("var = [def]", "var", "[def]");
+        assert_eq_vardef("var[ = ]def", "var[", "]def");
+        assert_eq_vardef("var=", "var", "");
+        assert_eq_vardef("=#def", "", "#def");
+        assert_eq_vardef("=", "", "");
+        assert!("var!".parse::<InputLine>().is_err());
+    }
+
+
+    #[test]
+    fn test_comment() {
+        assert_eq_comment("# comment");
+        assert_eq_comment("#comment");
+        assert_eq_comment("\n\t#comment");
+        assert_eq_comment("#[header]");
+        assert_eq_comment("#[header");
+        assert_eq_comment("#var=def");
+        assert_eq_comment("#");
+        assert_eq_comment("");
+        assert_eq_comment("\t\t\t");
     }
 }
