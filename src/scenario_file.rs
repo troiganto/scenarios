@@ -12,6 +12,14 @@ use inputline::{InputLine, SyntaxError};
 type Result<T> = ::std::result::Result<T, ParseError>;
 
 
+pub fn are_names_unique<'a, I>(scenarios: I) -> bool
+    where I: 'a + IntoIterator<Item = &'a Scenario>
+{
+    let mut names = ::std::collections::HashSet::new();
+    scenarios.into_iter().all(|s| names.insert(s.name()))
+}
+
+
 /// Opens a file and reads scenarios from it.
 ///
 /// If an error occurs, it contains the path of the offending file.
@@ -34,7 +42,6 @@ pub fn scenarios_from_named_buffer<F, S>(buffer: F, name: S) -> Result<Vec<Scena
     }
     result
 }
-
 
 /// Reads scenarios from a buffered reader.
 pub fn scenarios_from_buffer<F: BufRead>(buffer: F) -> Result<Vec<Scenario>> {
@@ -316,7 +323,12 @@ mod tests {
     use super::*;
 
     use std::collections::HashSet;
+    use std::io::Cursor;
 
+
+    fn get_scenarios(contents: &str) -> Vec<Scenario> {
+        scenarios_from_buffer(Cursor::new(contents)).unwrap()
+    }
 
     fn assert_vars(s: &Scenario, variables: &[(&str, &str)]) {
         let expected_names: HashSet<&str> = variables.iter().map(|&(name, _)| name).collect();
@@ -331,9 +343,8 @@ mod tests {
 
     #[test]
     fn test_iter_from_file() {
-        use std::io::Cursor;
 
-        let input = "\
+        let output = get_scenarios("\
         [First Scenario]
         aaaa = 1
         bbbb = 8
@@ -346,8 +357,7 @@ mod tests {
         cdcd= lesscomplicated
 
         [Third Scenario]
-        ";
-        let output = scenarios_from_buffer(Cursor::new(input)).unwrap();
+        ");
         let mut output = output.iter();
 
         let the_scenario = output.next().unwrap();
@@ -365,5 +375,25 @@ mod tests {
         assert_vars(the_scenario, &[]);
 
         assert!(output.next().is_none());
+    }
+
+
+    #[test]
+    fn test_are_names_unique() {
+        let output = get_scenarios("\
+        [first]
+        [second]
+        [third]
+        ");
+        assert!(are_names_unique(&output));
+
+        let output = get_scenarios("\
+        [first]
+        [second]
+        [third]
+        [second]
+        ");
+        assert!(!are_names_unique(&output));
+
     }
 }
