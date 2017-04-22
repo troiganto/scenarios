@@ -103,7 +103,19 @@ impl Scenario {
     /// combined by adding the `other` `HashMap` into `self`'s.
     /// If both scenarios define the same variable, the value of
     /// `other`'s takes precedence.
-    pub fn merge(&mut self, other: Scenario) {
+    pub fn merge(&mut self, other: &Scenario) {
+        // Merge names.
+        self.name.reserve(other.name.len() + 2);
+        self.name.push_str(", ");
+        self.name.push_str(&other.name);
+        // Merge variables.
+        for (key, value) in other.variables() {
+            self.variables.insert(key.to_owned(), value.to_owned());
+        }
+    }
+
+    /// Like `merge`, but moves the other scenario.
+    pub fn merge_into(&mut self, other: Scenario) {
         // Merge names.
         self.name.reserve(other.name.len() + 2);
         self.name.push_str(", ");
