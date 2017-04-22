@@ -23,7 +23,7 @@ pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, FileParseErr
     let path = path.into();
     match File::open(&path) {
         Ok(file) => from_named_buffer(io::BufReader::new(file), path),
-        Err(err) => Err(FileParseError::from_io_error(err, path)),
+        Err(err) => Err(FileParseError::new(err, path)),
     }
 }
 
@@ -69,8 +69,8 @@ impl<F: BufRead> ScenariosIter<F> {
             next_header: None,
             current_lineno: 0,
         };
-        if let Err(parse_error) = result.skip_to_next_header() {
-            return Err(parse_error.add_lineno(result.current_lineno));
+        if let Err(err) = result.skip_to_next_header() {
+            return Err(err.add_lineno(result.current_lineno));
         }
         Ok(result)
     }
@@ -157,32 +157,30 @@ impl<F: BufRead> Iterator for ScenariosIter<F> {
         match self.read_next_section() {
             Ok(Some(result)) => Some(Ok(result)),
             Ok(None) => None,
-            Err(parse_error) => Some(Err(parse_error.add_lineno(self.current_lineno))),
+            Err(err) => Some(Err(err.add_lineno(self.current_lineno))),
         }
     }
 }
 
 
+/// An error that occured while handling a specific file.
 #[derive(Debug)]
-pub enum FileParseError {
-    LineParseError {
-        inner: LineParseError,
-        filename: String,
-    },
-    IoError { inner: io::Error, filename: String },
+pub struct FileParseError {
+    kind: FileParseErrorKind,
+    filename: String,
 }
 
 impl FileParseError {
-    fn from_line_parse_error<S: Into<String>>(inner: LineParseError, filename: S) -> Self {
-        FileParseError::LineParseError {
-            inner: inner,
-            filename: filename.into(),
-        }
-    }
-
-    fn from_io_error<S: Into<String>>(inner: io::Error, filename: S) -> Self {
-        FileParseError::IoError {
-            inner: inner,
+    /// Create a new error.
+    ///
+    /// The `inner` argument should be either an `std::io::Error` or
+    /// a `LineParseError`.
+    fn new<E, S>(inner: E, filename: S) -> Self
+        where E: Into<FileParseErrorKind>,
+              S: Into<String>
+    {
+        FileParseError {
+            kind: inner.into(),
             filename: filename.into(),
         }
     }
@@ -190,36 +188,52 @@ impl FileParseError {
 
 impl Display for FileParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            FileParseError::LineParseError {
-                ref inner,
-                ref filename,
-            } => write!(f, "{}: {}", filename, inner),
-            FileParseError::IoError {
-                ref inner,
-                ref filename,
-            } => write!(f, "{}: {}", filename, inner),
+        write!(f, "{}: ", self.filename)?;
+        match self.kind {
+            FileParseErrorKind::LineParseError(ref err) => err.fmt(f),
+            FileParseErrorKind::IoError(ref err) => err.fmt(f),
         }
     }
 }
 
 impl Error for FileParseError {
     fn description(&self) -> &str {
-        match *self {
-            FileParseError::LineParseError { ref inner, .. } => inner.description(),
-            FileParseError::IoError { ref inner, .. } => inner.description(),
+        match self.kind {
+            FileParseErrorKind::LineParseError(ref err) => err.description(),
+            FileParseErrorKind::IoError(ref err) => err.description(),
         }
     }
 
     fn cause(&self) -> Option<&Error> {
-        match *self {
-            FileParseError::LineParseError { ref inner, .. } => Some(inner),
-            FileParseError::IoError { ref inner, .. } => Some(inner),
+        match self.kind {
+            FileParseErrorKind::LineParseError(ref err) => Some(err),
+            FileParseErrorKind::IoError(ref err) => Some(err),
         }
     }
 }
 
 
+/// Enum of the different kinds of errors wrapped by `FileParseError`.
+#[derive(Debug)]
+enum FileParseErrorKind {
+    LineParseError(LineParseError),
+    IoError(io::Error),
+}
+
+impl From<LineParseError> for FileParseErrorKind {
+    fn from(err: LineParseError) -> Self {
+        FileParseErrorKind::LineParseError(err)
+    }
+}
+
+impl From<io::Error> for FileParseErrorKind {
+    fn from(err: io::Error) -> Self {
+        FileParseErrorKind::IoError(err)
+    }
+}
+
+
+/// A `ParseError` with additional line number information.
 #[derive(Debug)]
 pub struct LineParseError {
     inner: ParseError,
@@ -227,16 +241,9 @@ pub struct LineParseError {
 }
 
 impl LineParseError {
+    /// Enrich this error with the file in which it occurred.
     fn add_filename<S: Into<String>>(self, filename: S) -> FileParseError {
-        FileParseError::from_line_parse_error(self, filename)
-    }
-
-    pub fn as_inner(&self) -> &ParseError {
-        &self.inner
-    }
-
-    pub fn into_inner(self) -> ParseError {
-        self.inner
+        FileParseError::new(self, filename)
     }
 }
 
@@ -258,6 +265,7 @@ impl Error for LineParseError {
 }
 
 
+/// Any type of error that occurs during parsing of scenario files.
 #[derive(Debug)]
 pub enum ParseError {
     IoError(io::Error),
@@ -267,6 +275,7 @@ pub enum ParseError {
 }
 
 impl ParseError {
+    /// Enrich this error with the line in which it occurred.
     fn add_lineno(self, lineno: usize) -> LineParseError {
         LineParseError {
             inner: self,
