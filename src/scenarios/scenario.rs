@@ -99,31 +99,35 @@ impl Scenario {
     /// Merges another scenario into this one.
     ///
     /// This combines the names and variables of both scenarios.
-    /// The names get combined with a ", " (comma+space). Variables are
-    /// combined by adding the `other` `HashMap` into `self`'s.
-    /// If both scenarios define the same variable, the value of
-    /// `other`'s takes precedence.
-    pub fn merge(&mut self, other: &Scenario) {
-        // Merge names.
-        self.name.reserve(other.name.len() + 2);
-        self.name.push_str(", ");
-        self.name.push_str(&other.name);
-        // Merge variables.
-        for (key, value) in other.variables() {
-            self.variables.insert(key.to_owned(), value.to_owned());
-        }
-    }
-
-    /// Like `merge`, but moves the other scenario.
-    pub fn merge_into(&mut self, other: Scenario) {
-        // Merge names.
-        self.name.reserve(other.name.len() + 2);
-        self.name.push_str(", ");
-        self.name.push_str(&other.name);
-        // Merge variables.
-        for (key, value) in other.into_variables() {
-            self.variables.insert(key, value);
-        }
+    /// The names get combined with `delimiter` between them. Variables
+    /// are combined by adding the `other` `HashMap` into `self`'s.
+    /// If both scenarios define the same variable and `strict` is
+    /// `false`, the value of `other`'s takes precedence.
+    ///
+    /// #Errors
+    /// If `strict` is `true` and both scenarios define the same
+    /// variable, a `ScenarioError::StrictMergeFailed` is returned.
+    pub fn merge(&mut self,
+                 other: &Scenario,
+                 delimiter: &str,
+                 strict: bool)
+                 -> Result<(), ScenarioError> {
+        // Merge scenario names.
+        merge_names(&mut self.name, delimiter, &other.name);
+        // Turn (&String, &String) iterator into (String, String) iterator.
+        let other_vars = other
+            .variables()
+            .map(|(k, v)| (k.to_owned(), v.to_owned()));
+        // Merge variable definitions.
+        let result = merge_vars(&mut self.variables, other_vars, strict);
+        // Enhance the error.
+        result.map_err(|varname| {
+                           ScenarioError::StrictMergeFailed {
+                               varname: varname,
+                               left: self.name.clone(),
+                               right: other.name.clone(),
+                           }
+                       })
     }
 }
 
@@ -134,15 +138,44 @@ impl Display for Scenario {
 }
 
 
+fn merge_names(left: &mut String, delimiter: &str, right: &str) {
+    left.reserve(delimiter.len() + right.len());
+    left.push_str(delimiter);
+    left.push_str(right);
+}
+
+fn merge_vars<I>(map: &mut HashMap<String, String>, to_add: I, strict: bool) -> Result<(), String>
+    where I: Iterator<Item = (String, String)>
+{
+    if strict {
+        for (key, value) in to_add {
+            if map.contains_key(&key) {
+                return Err(key);
+            }
+            map.insert(key, value);
+        }
+    } else {
+        map.extend(to_add);
+    }
+    Ok(())
+}
+
+
 /// Errors caused during building a scenario.
 #[derive(Debug)]
 pub enum ScenarioError {
-    /// The name contains invalid characters.
+    /// The scenario name is invalid.
     InvalidName(String),
-    /// The variable name contains invalid characters.
+    /// The variable name is invalid.
     InvalidVariable(String),
     /// A variable of this name has been added before.
     DuplicateVariable(String),
+    /// Two scenarios to be merged define the same variable.
+    StrictMergeFailed {
+        varname: String,
+        left: String,
+        right: String,
+    },
 }
 
 impl Display for ScenarioError {
@@ -153,6 +186,18 @@ impl Display for ScenarioError {
             InvalidName(ref name) => write!(f, "{}: {:?}", self.description(), name),
             InvalidVariable(ref name) => write!(f, "{}: {:?}", self.description(), name),
             DuplicateVariable(ref name) => write!(f, "{}: {:?}", self.description(), name),
+            StrictMergeFailed {
+                ref varname,
+                ref left,
+                ref right,
+            } => {
+                write!(f,
+                       r#"{}: "{}" defined both by "{}" and by "{}""#,
+                       self.description(),
+                       varname,
+                       left,
+                       right)
+            }
         }
     }
 }
@@ -162,9 +207,10 @@ impl Error for ScenarioError {
         use self::ScenarioError::*;
 
         match *self {
-            InvalidName(_) => "invalid name",
-            InvalidVariable(_) => "invalid variable name",
-            DuplicateVariable(_) => "duplicate variable",
+            InvalidName(_) => "the scenario name is invalid",
+            InvalidVariable(_) => "the variable name is invalid",
+            DuplicateVariable(_) => "a variable of this name has been added before",
+            StrictMergeFailed { .. } => "two scenarios to be merged define the same variable",
         }
     }
 

@@ -71,7 +71,7 @@ fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
             .expect("cartesian::product never yields empty vectors")
             .clone();
         for s in set_of_scenarios {
-            combined_scenario.merge(s);
+            combined_scenario.merge(s, ", ", true);
         }
         println!("{}", combined_scenario);
     }
