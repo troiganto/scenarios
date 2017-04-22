@@ -115,6 +115,12 @@ impl Scenario {
     }
 }
 
+impl Display for Scenario {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, r#"Scenario "{}""#, self.name)
+    }
+}
+
 
 /// Errors caused during building a scenario.
 #[derive(Debug)]

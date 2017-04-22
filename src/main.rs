@@ -10,6 +10,7 @@ mod scenarios;
 mod cartesian;
 
 
+use std::fmt::Display;
 use clap::{Arg, App};
 
 
@@ -69,6 +70,19 @@ When using the --include argument, consider passing it as
 the pattern before scenarios gets to see it.";
 
 
+fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Box<Display>> {
+    // Collect scenario file names.
+    let scenario_files = matches
+        .values_of("input")
+        .ok_or_else(|| Box::new("no scenarios provided") as Box<Display>)?
+        .map(scenarios::from_file)
+        .collect::<Result<Vec<Vec<scenarios::Scenario>>, _>>()
+        .map_err(|err| Box::new(err) as Box<Display>)?;
+
+    println!("{:?}", scenario_files);
+    Ok(())
+}
+
 fn main() {
     let app = App::new(crate_name!())
         .version(crate_version!())
@@ -76,7 +90,7 @@ fn main() {
         .about(crate_description!())
         .after_help(LONG_EXPLANATION)
         .help_message("Prints detailed help information")
-        .arg(Arg::with_name("help")
+        .arg(Arg::with_name("short_help")
                  .short("h")
                  .help("Prints short help information"))
         .arg(Arg::with_name("input")
@@ -88,15 +102,22 @@ fn main() {
                 all possible combinations between them are used. \
                 Pass \"-\" to read from stdin. You may pass this \
                 option more than once."));
+
+    // We clone `app` here because `get_matches` consumes it -- but we
+    // might still need it to print the short help!
     let matches = app.clone().get_matches();
 
-    if matches.is_present("help") {
+    // If -h was passed, reduce the help message to nothing and print
+    //it.
+    if matches.is_present("short_help") {
         app.after_help("").print_help().unwrap();
         return;
     }
 
-    let files: Vec<&str> = matches
-        .values_of("input")
-        .map_or(Vec::new(), |values| values.collect());
-    println!("{:?}", files);
+    if let Err(err) = try_main(matches) {
+        let msg = err.to_string();
+        let kind = clap::ErrorKind::Format;
+        let err = clap::Error::with_description(&msg, kind);
+        err.exit();
+    }
 }
