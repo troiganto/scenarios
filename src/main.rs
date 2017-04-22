@@ -64,15 +64,9 @@ fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
         .map(scenarios::from_file)
         .collect::<Result<_, _>>()?;
 
+    let merger = scenarios::Merger::new();
     for set_of_scenarios in cartesian::product(&scenario_files) {
-        let mut set_of_scenarios = set_of_scenarios.into_iter();
-        let mut combined_scenario = set_of_scenarios
-            .next()
-            .expect("cartesian::product never yields empty vectors")
-            .clone();
-        for s in set_of_scenarios {
-            combined_scenario.merge(s, ", ", true);
-        }
+        let combined_scenario = merger.merge(set_of_scenarios.into_iter())?;
         println!("{}", combined_scenario);
     }
     Ok(())
@@ -82,6 +76,7 @@ fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
 #[derive(Debug)]
 enum Error {
     FileParseError(scenarios::FileParseError),
+    ScenarioError(scenarios::ScenarioError),
     NoScenarios,
 }
 
@@ -89,6 +84,7 @@ impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::FileParseError(ref err) => err.fmt(f),
+            Error::ScenarioError(ref err) => err.fmt(f),
             Error::NoScenarios => write!(f, "{}", self.description()),
         }
     }
@@ -98,6 +94,7 @@ impl StdError for Error {
     fn description(&self) -> &str {
         match *self {
             Error::FileParseError(ref err) => err.description(),
+            Error::ScenarioError(ref err) => err.description(),
             Error::NoScenarios => "no scenarios provided",
         }
     }
@@ -105,6 +102,7 @@ impl StdError for Error {
     fn cause(&self) -> Option<&std::error::Error> {
         match *self {
             Error::FileParseError(ref err) => Some(err),
+            Error::ScenarioError(ref err) => Some(err),
             Error::NoScenarios => None,
         }
     }
@@ -113,6 +111,21 @@ impl StdError for Error {
 impl From<scenarios::FileParseError> for Error {
     fn from(err: scenarios::FileParseError) -> Self {
         Error::FileParseError(err)
+    }
+}
+
+impl From<scenarios::ScenarioError> for Error {
+    fn from(err: scenarios::ScenarioError) -> Self {
+        Error::ScenarioError(err)
+    }
+}
+
+impl From<scenarios::MergeError> for Error {
+    fn from(err: scenarios::MergeError) -> Self {
+        match err {
+            scenarios::MergeError::NoScenarios => Error::NoScenarios,
+            scenarios::MergeError::ScenarioError(err) => Error::ScenarioError(err),
+        }
     }
 }
 
