@@ -19,10 +19,10 @@ pub fn are_names_unique<'a, I>(scenarios: I) -> bool
 /// Opens a file and reads scenarios from it.
 ///
 /// If an error occurs, it contains the path of the offending file.
-pub fn scenarios_from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, FileParseError> {
+pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, FileParseError> {
     let path = path.into();
     match File::open(&path) {
-        Ok(file) => scenarios_from_named_buffer(io::BufReader::new(file), path),
+        Ok(file) => from_named_buffer(io::BufReader::new(file), path),
         Err(err) => Err(FileParseError::from_io_error(err, path)),
     }
 }
@@ -30,17 +30,15 @@ pub fn scenarios_from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, Fi
 /// Reads scenarios from a given buffered reader.
 ///
 /// If an error occurs, it is enriched with the given name.
-pub fn scenarios_from_named_buffer<F, S>(buffer: F,
-                                         name: S)
-                                         -> Result<Vec<Scenario>, FileParseError>
+pub fn from_named_buffer<F, S>(buffer: F, name: S) -> Result<Vec<Scenario>, FileParseError>
     where F: BufRead,
           S: Into<String>
 {
-    scenarios_from_buffer(buffer).map_err(|err| err.add_filename(name))
+    from_buffer(buffer).map_err(|err| err.add_filename(name))
 }
 
 /// Reads scenarios from a buffered reader.
-pub fn scenarios_from_buffer<F: BufRead>(buffer: F) -> Result<Vec<Scenario>, LineParseError> {
+pub fn from_buffer<F: BufRead>(buffer: F) -> Result<Vec<Scenario>, LineParseError> {
     ScenariosIter::new(buffer)?.collect()
 }
 
@@ -337,7 +335,7 @@ mod tests {
 
 
     fn get_scenarios(contents: &str) -> Vec<Scenario> {
-        scenarios_from_buffer(Cursor::new(contents)).unwrap()
+        from_buffer(Cursor::new(contents)).unwrap()
     }
 
     fn assert_vars(s: &Scenario, variables: &[(&str, &str)]) {
