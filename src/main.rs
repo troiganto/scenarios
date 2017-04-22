@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+#[macro_use]
 extern crate clap;
 extern crate regex;
 #[macro_use]
@@ -12,7 +13,8 @@ mod cartesian;
 use clap::{Arg, App};
 
 
-static LONG_EXPLANATION: &'static str = "This program takes one or more scenario files. A scenario \
+static LONG_EXPLANATION: &'static str = "\
+This program takes one or more scenario files. A scenario \
 is named set of environment variables to apply at the same \
 time. A scenario file contains a list of scenarios in the \
 following format:
@@ -68,10 +70,10 @@ the pattern before scenarios gets to see it.";
 
 
 fn main() {
-    let app = App::new("scenarios")
-        .version("0.0.1")
-        .author("Nico Madysa <nico.madysa@tu-dresden.de>")
-        .about("Run a command line multiple times in different environments.")
+    let app = App::new(crate_name!())
+        .version(crate_version!())
+        .author(crate_authors!())
+        .about(crate_description!())
         .after_help(LONG_EXPLANATION)
         .help_message("Prints detailed help information")
         .arg(Arg::with_name("help")
