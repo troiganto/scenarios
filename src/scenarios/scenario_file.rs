@@ -4,8 +4,8 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use std::io::{self, BufRead};
 
-use scenario::{Scenario, ScenarioError};
-use inputline::{InputLine, SyntaxError};
+use super::scenario::{Scenario, ScenarioError};
+use super::inputline::{InputLine, SyntaxError};
 
 
 pub fn are_names_unique<'a, I>(scenarios: I) -> bool

@@ -5,9 +5,7 @@ extern crate regex;
 #[macro_use]
 extern crate lazy_static;
 
-mod inputline;
-mod scenario;
-mod scenario_file;
+mod scenarios;
 mod cartesian;
 
 
