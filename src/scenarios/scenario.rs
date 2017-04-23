@@ -18,8 +18,7 @@ fn is_alnum_identifier(s: &str) -> bool {
 /// A scenario has a name and a set of environment variable definitions.
 /// Each definition has an associated variable name and the corresponding
 /// value, both strings. A variable name must follow the rules for regular
-/// C identifiers. A scenario name must be non-empty and must not contain
-/// the character `','` (comma).
+/// C identifiers. A scenario name must be non-empty.
 #[derive(Clone, Debug)]
 pub struct Scenario {
     name: String,
@@ -34,7 +33,7 @@ impl Scenario {
     /// is the empty string or contains a comma.
     pub fn new<S: Into<String>>(name: S) -> Result<Self, ScenarioError> {
         let name = name.into();
-        if name.is_empty() || name.contains(',') {
+        if name.is_empty() {
             return Err(ScenarioError::InvalidName(name));
         }
         Ok(Scenario {
@@ -233,7 +232,6 @@ mod tests {
         assert!(is_alnum_identifier("l111"));
         assert!(is_alnum_identifier("__init__"));
 
-
         assert!(!is_alnum_identifier(""));
         assert!(!is_alnum_identifier("some value"));
         assert!(!is_alnum_identifier("Mörder"));
@@ -248,7 +246,9 @@ mod tests {
         assert!(Scenario::new("A Name").is_ok());
         assert!(Scenario::new("666").is_ok());
 
-        assert!(Scenario::new("a, b").is_err());
+        assert!(Scenario::new("a, b").is_ok());
+        assert!(Scenario::new("\0").is_ok());
+        assert!(Scenario::new("  ").is_ok());
         assert!(Scenario::new("").is_err());
     }
 
