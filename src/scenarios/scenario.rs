@@ -19,7 +19,7 @@ fn is_alnum_identifier(s: &str) -> bool {
 /// Each definition has an associated variable name and the corresponding
 /// value, both strings. A variable name must follow the rules for regular
 /// C identifiers. A scenario name must be non-empty.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scenario {
     name: String,
     variables: HashMap<String, String>,
