@@ -213,3 +213,113 @@ impl From<ScenarioError> for MergeError {
         MergeError::ScenarioError(err)
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_scenario(name: &str, vars: &[&str]) -> Scenario {
+        let mut result = Scenario::new(name).expect(name);
+        for var in vars.into_iter().cloned() {
+            result.add_variable(var, "").expect(var);
+        }
+        result
+    }
+
+    #[test]
+    fn test_empty() {
+        let merged = MergedScenario::new();
+        assert!(merged.is_empty());
+        assert!(!merged.failed());
+        match merged.into_inner() {
+            Err(MergeError::NoScenarios) => assert!(true),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn test_add_one() {
+        let expected = make_scenario("A", &[]);
+        let mut merged = MergedScenario::new();
+        merged.merge(&expected, ", ", true);
+
+        assert!(!merged.is_empty());
+        assert!(!merged.failed());
+
+        let actual = merged.into_inner().unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_add_two() {
+        let expected = make_scenario("A -- B", &["a", "b"]);
+        let one = make_scenario("A", &["a"]);
+        let two = make_scenario("B", &["b"]);
+
+        let mut merged = MergedScenario::new();
+        merged.merge(&one, " -- ", true);
+        merged.merge(&two, " -- ", true);
+
+        assert!(!merged.is_empty());
+        assert!(!merged.failed());
+
+        let actual = merged.into_inner().unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_add_error() {
+        let one = make_scenario("A", &["a"]);
+        let two = make_scenario("B", &["a"]);
+
+        let mut merged = MergedScenario::new();
+        merged.merge(&one, ", ", true);
+        merged.merge(&two, ", ", true);
+
+        assert!(!merged.is_empty());
+        assert!(merged.failed());
+
+        let err = merged.into_inner().unwrap_err();
+        match err {
+            MergeError::ScenarioError(ScenarioError::StrictMergeFailed {
+                                          varname,
+                                          left,
+                                          right,
+                                      }) => {
+                assert_eq!(varname, "a".to_owned());
+                assert_eq!(left, "A".to_owned());
+                assert_eq!(right, "B".to_owned());
+            }
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn test_add_non_strict() {
+        let expected = make_scenario("A, B", &["a"]);
+        let one = make_scenario("A", &["a"]);
+        let two = make_scenario("B", &["a"]);
+
+        let mut merged = MergedScenario::new();
+        merged.merge(&one, ", ", false);
+        merged.merge(&two, ", ", false);
+
+        assert!(!merged.is_empty());
+        assert!(!merged.failed());
+
+        let actual = merged.into_inner().unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_merger() {
+        let expected = make_scenario("A/B/C", &["a", "aa", "b", "bb", "c", "cc"]);
+        let all = [make_scenario("A", &["a", "aa"]),
+                   make_scenario("B", &["b", "bb"]),
+                   make_scenario("C", &["c", "cc"])];
+
+        let actual = Merger::new().with_delimiter("/").merge(&all).unwrap();
+        assert_eq!(expected, actual);
+    }
+}
