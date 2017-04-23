@@ -8,6 +8,7 @@ extern crate lazy_static;
 
 mod scenarios;
 mod cartesian;
+mod consumers;
 
 
 use std::error::Error as StdError;
