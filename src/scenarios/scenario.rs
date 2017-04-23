@@ -115,16 +115,10 @@ impl Scenario {
         let other_vars = other
             .variables()
             .map(|(k, v)| (k.to_owned(), v.to_owned()));
-        // Merge variable definitions.
-        let result = merge_vars(&mut self.variables, other_vars, strict);
-        // Enhance the error.
-        result.map_err(|varname| {
-                           ScenarioError::StrictMergeFailed {
-                               varname: varname,
-                               left: self.name.clone(),
-                               right: other.name.clone(),
-                           }
-                       })?;
+        // Merge variable definitions. If an error occurs, build a
+        // `ScenarioError::StrictMergeFailed` value and return.
+        merge_vars(&mut self.variables, other_vars, strict)
+            .map_err(|varname| fail_strict_merge(varname, &self.name, &other.name))?;
         // If we merged names before the variables, the error would
         // contain the already-merged name -- thus, we only merge names
         // after merging the variables has succeeded.
@@ -194,7 +188,7 @@ impl Display for ScenarioError {
                 ref right,
             } => {
                 write!(f,
-                       r#"{}: "{}" defined both by "{}" and by "{}""#,
+                       r#"{}: "{}" defined by scenarios "{}" and "{}""#,
                        self.description(),
                        varname,
                        left,
@@ -212,12 +206,25 @@ impl Error for ScenarioError {
             InvalidName(_) => "the scenario name is invalid",
             InvalidVariable(_) => "the variable name is invalid",
             DuplicateVariable(_) => "a variable of this name has been added before",
-            StrictMergeFailed { .. } => "two scenarios to be merged define the same variable",
+            StrictMergeFailed { .. } => "conflicting variable definitions",
         }
     }
 
     fn cause(&self) -> Option<&Error> {
         None
+    }
+}
+
+/// Shortens creation of `ScenarioError::StrictMergeFailed` values.
+fn fail_strict_merge<S1, S2, S3>(varname: S1, left: S2, right: S3) -> ScenarioError
+    where S1: Into<String>,
+          S2: Into<String>,
+          S3: Into<String>
+{
+    ScenarioError::StrictMergeFailed {
+        varname: varname.into(),
+        left: left.into(),
+        right: right.into(),
     }
 }
 
