@@ -111,8 +111,6 @@ impl Scenario {
                  delimiter: &str,
                  strict: bool)
                  -> Result<(), ScenarioError> {
-        // Merge scenario names.
-        merge_names(&mut self.name, delimiter, &other.name);
         // Turn (&String, &String) iterator into (String, String) iterator.
         let other_vars = other
             .variables()
@@ -126,7 +124,12 @@ impl Scenario {
                                left: self.name.clone(),
                                right: other.name.clone(),
                            }
-                       })
+                       })?;
+        // If we merged names before the variables, the error would
+        // contain the already-merged name -- thus, we only merge names
+        // after merging the variables has succeeded.
+        merge_names(&mut self.name, delimiter, &other.name);
+        Ok(())
     }
 }
 
