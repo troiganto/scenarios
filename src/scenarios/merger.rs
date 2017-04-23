@@ -82,7 +82,9 @@ impl<'a> Merger<'a> {
 }
 
 impl<'a> Default for Merger<'a> {
-    fn default() -> Self { Merger::new() }
+    fn default() -> Self {
+        Merger::new()
+    }
 }
 
 
@@ -161,6 +163,12 @@ impl MergedScenario {
         if let Err(err) = merge_result {
             self.0 = Err(MergeError::from(err));
         }
+    }
+}
+
+impl Default for MergedScenario {
+    fn default() -> Self {
+        MergedScenario::new()
     }
 }
 
