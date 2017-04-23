@@ -91,9 +91,10 @@ fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
                             .value_of("delimiter")
                             .expect("default value is missing"))
         .with_strict_mode(!matches.is_present("lax"));
+    let consumer: Box<consumers::Consumer> = Box::new(consumers::Printer::new());
     for set_of_scenarios in cartesian::product(&scenario_files) {
         let combined_scenario = merger.merge(set_of_scenarios.into_iter())?;
-        println!("{}", combined_scenario);
+        consumer.consume(&combined_scenario);
     }
     Ok(())
 }
