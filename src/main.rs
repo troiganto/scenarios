@@ -21,19 +21,40 @@ fn main() {
         .author(crate_authors!())
         .about(crate_description!())
         .after_help(LONG_EXPLANATION)
-        .help_message("Prints detailed help information")
+        .help_message("Print detailed help information.")
+        // General args.
         .arg(Arg::with_name("short_help")
                  .short("h")
-                 .help("Prints short help information"))
+                 .help("Print short help information."))
+        .arg(Arg::with_name("delimiter")
+                 .short("d")
+                 .long("delimiter")
+                 .takes_value(true)
+                 .default_value(", ")
+                 .help("A delimiter to use when merging the names \
+                        of a scenario combination."))
+        // Strict mode control.
+        .arg(Arg::with_name("strict")
+                 .short("s")
+                 .long("strict")
+                 .conflicts_with("lax")
+                 .help("This is the default. No two scenario files \
+                        may define the same scenario name or \
+                        environment variable."))
+        .arg(Arg::with_name("lax")
+                 .short("l")
+                 .long("lax")
+                 .help("Disable strict mode."))
+        // Input control.
         .arg(Arg::with_name("input")
                  .short("i")
                  .takes_value(true)
                  .number_of_values(1)
                  .multiple(true)
-                 .help("Input scenario files. If multiple files are passed, \
-                all possible combinations between them are used. \
-                Pass \"-\" to read from stdin. You may pass this \
-                option more than once."));
+                 .help("Input scenario files. If multiple files are \
+                 passed, all possible combinations between them are \
+                 used. Pass \"-\" to read from stdin. You may pass \
+                 this option more than once."));
 
     // We clone `app` here because `get_matches` consumes it -- but we
     // might still need it to print the short help!
@@ -64,7 +85,11 @@ fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
         .map(scenarios::from_file)
         .collect::<Result<_, _>>()?;
 
-    let merger = scenarios::Merger::new();
+    let merger = scenarios::Merger::new()
+        .with_delimiter(matches
+                            .value_of("delimiter")
+                            .expect("default value is missing"))
+        .with_strict_mode(!matches.is_present("lax"));
     for set_of_scenarios in cartesian::product(&scenario_files) {
         let combined_scenario = merger.merge(set_of_scenarios.into_iter())?;
         println!("{}", combined_scenario);

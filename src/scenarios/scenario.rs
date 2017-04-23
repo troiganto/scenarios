@@ -216,15 +216,11 @@ impl Error for ScenarioError {
 }
 
 /// Shortens creation of `ScenarioError::StrictMergeFailed` values.
-fn fail_strict_merge<S1, S2, S3>(varname: S1, left: S2, right: S3) -> ScenarioError
-    where S1: Into<String>,
-          S2: Into<String>,
-          S3: Into<String>
-{
+fn fail_strict_merge(varname: String, left: &str, right: &str) -> ScenarioError {
     ScenarioError::StrictMergeFailed {
-        varname: varname.into(),
-        left: left.into(),
-        right: right.into(),
+        varname: varname,
+        left: left.to_owned(),
+        right: right.to_owned(),
     }
 }
 
