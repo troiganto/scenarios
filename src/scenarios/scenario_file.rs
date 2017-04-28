@@ -9,7 +9,8 @@ use super::inputline::{InputLine, SyntaxError};
 
 
 pub fn are_names_unique<'a, I>(scenarios: I) -> bool
-    where I: 'a + IntoIterator<Item = &'a Scenario>
+where
+    I: 'a + IntoIterator<Item = &'a Scenario>,
 {
     let mut names = ::std::collections::HashSet::new();
     scenarios.into_iter().all(|s| names.insert(s.name()))
@@ -31,8 +32,9 @@ pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, FileParseErr
 ///
 /// If an error occurs, it is enriched with the given name.
 pub fn from_named_buffer<F, S>(buffer: F, name: S) -> Result<Vec<Scenario>, FileParseError>
-    where F: BufRead,
-          S: Into<String>
+where
+    F: BufRead,
+    S: Into<String>,
 {
     from_buffer(buffer).map_err(|err| err.add_filename(name))
 }
@@ -75,7 +77,7 @@ impl<F: BufRead> ScenariosIter<F> {
         Ok(result)
     }
 
-    /// Drop lines in the input iterator until the next header line appears.
+    /// Drop lines until the next header line appears.
     ///
     /// This sets `self.next_header` to the found header line. If no
     /// further header line is found, it is set to `None`. No variable
@@ -94,14 +96,14 @@ impl<F: BufRead> ScenariosIter<F> {
         self.next_header = None;
         while let Some(line) = self.next_line() {
             match line?.parse::<InputLine>()? {
-                InputLine::Comment => {}
+                InputLine::Comment => {},
                 InputLine::Header(header) => {
                     self.next_header = Some(header);
                     return Ok(());
-                }
+                },
                 InputLine::Definition(varname, _) => {
                     return Err(ParseError::UnexpectedVardef(varname).into());
-                }
+                },
             }
         }
         // No further header found, `next_header` stays `None`.
@@ -130,14 +132,14 @@ impl<F: BufRead> ScenariosIter<F> {
         };
         while let Some(line) = self.next_line() {
             match line?.parse::<InputLine>()? {
-                InputLine::Comment => {}
+                InputLine::Comment => {},
                 InputLine::Header(name) => {
                     self.next_header = Some(name);
                     break;
-                }
+                },
                 InputLine::Definition(name, value) => {
                     result.add_variable(name, value)?;
-                }
+                },
             }
         }
         Ok(Some(result))
@@ -176,8 +178,9 @@ impl FileParseError {
     /// The `inner` argument should be either an `std::io::Error` or
     /// a `LineParseError`.
     fn new<E, S>(inner: E, filename: S) -> Self
-        where E: Into<FileParseErrorKind>,
-              S: Into<String>
+    where
+        E: Into<FileParseErrorKind>,
+        S: Into<String>,
     {
         FileParseError {
             kind: inner.into(),
@@ -360,21 +363,22 @@ mod tests {
 
     #[test]
     fn test_iter_from_file() {
+        let output = get_scenarios(
+            "\
+            [First Scenario]
+            aaaa = 1
+            bbbb = 8
+            cdcd = complicated value
 
-        let output = get_scenarios("\
-        [First Scenario]
-        aaaa = 1
-        bbbb = 8
-        cdcd = complicated value
+            [Second Scenario]
+            # Comment line
+            aaaa=8
+            bbbb             =1
+            cdcd= lesscomplicated
 
-        [Second Scenario]
-        # Comment line
-        aaaa=8
-        bbbb             =1
-        cdcd= lesscomplicated
-
-        [Third Scenario]
-        ");
+            [Third Scenario]
+            ",
+        );
         let mut output = output.iter();
 
         let the_scenario = output.next().unwrap();
@@ -397,19 +401,23 @@ mod tests {
 
     #[test]
     fn test_are_names_unique() {
-        let output = get_scenarios("\
-        [first]
-        [second]
-        [third]
-        ");
+        let output = get_scenarios(
+            "\
+            [first]
+            [second]
+            [third]
+            ",
+        );
         assert!(are_names_unique(&output));
 
-        let output = get_scenarios("\
-        [first]
-        [second]
-        [third]
-        [second]
-        ");
+        let output = get_scenarios(
+            "\
+            [first]
+            [second]
+            [third]
+            [second]
+            ",
+        );
         assert!(!are_names_unique(&output));
 
     }

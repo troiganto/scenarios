@@ -1,0 +1,55 @@
+verbose = false
+error_on_line_overflow = true
+skip_children = false
+comment_width = 72
+max_width = 100
+condense_wildcard_suffices = false
+hard_tabs = false
+tab_spaces = 4
+take_source_hints = false
+use_try_shorthand = false
+write_mode = "Overwrite"
+
+control_brace_style = "AlwaysSameLine"
+fn_brace_style = "SameLineWhere"
+item_brace_style = "SameLineWhere"
+
+fn_args_density = "Tall"
+generics_style = "Rfc"
+struct_lit_multiline_style = "PreferSingle"
+where_density = "CompressedIfEmpty"
+where_layout = "Vertical"
+where_style = "Rfc"
+
+trailing_comma = "Vertical"
+type_punctuation_density = "Wide"
+
+fn_args_paren_newline = false
+fn_empty_single_line = true
+fn_single_line = false
+force_explicit_abi = true
+force_format_strings = false
+format_strings = true
+impl_empty_single_line = true
+indent_match_arms = true
+match_block_trailing_comma = true
+normalize_comments = true
+space_after_bound_colon = true
+space_after_type_annotation_colon = true
+space_before_bound = false
+space_before_type_annotation = false
+space_around_ranges = false
+spaces_within_angle_brackets = false
+spaces_within_parens = false
+spaces_within_brackets = false
+wrap_comments = true
+wrap_multiline_match_arms = true
+
+array_layout = "Block"
+chain_indent = "Block"
+fn_args_layout = "Block"
+fn_call_style = "Block"
+generics_indent = "Block"
+struct_lit_style = "Block"
+where_indent = "Block"
+where_pred_indent = "Block"

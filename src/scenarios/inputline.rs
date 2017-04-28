@@ -37,7 +37,8 @@ pub enum InputLine {
     Comment,
     /// A header line. Contains the part within the brackets.
     Header(String),
-    /// A definition. Contains the part before and after the first equal sign.
+    /// A definition. Contains the part before and after the first
+    /// equal sign.
     Definition(String, String),
 }
 
@@ -119,14 +120,18 @@ mod tests {
     use super::*;
 
     fn assert_eq_header(line: &str, expected_header: &str) {
-        assert_eq!(line.parse::<InputLine>().unwrap(),
-                   InputLine::Header(expected_header.into()));
+        assert_eq!(
+            line.parse::<InputLine>().unwrap(),
+            InputLine::Header(expected_header.into())
+        );
     }
 
 
     fn assert_eq_vardef(line: &str, expected_var: &str, expected_def: &str) {
-        assert_eq!(line.parse::<InputLine>().unwrap(),
-                   InputLine::Definition(expected_var.into(), expected_def.into()));
+        assert_eq!(
+            line.parse::<InputLine>().unwrap(),
+            InputLine::Definition(expected_var.into(), expected_def.into())
+        );
     }
 
 

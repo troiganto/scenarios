@@ -16,8 +16,10 @@ fn is_alnum_identifier(s: &str) -> bool {
 /// Named set of environment variable definitions.
 ///
 /// A scenario has a name and a set of environment variable definitions.
-/// Each definition has an associated variable name and the corresponding
-/// value, both strings. A variable name must follow the rules for regular
+/// Each definition has an associated variable name and the
+/// corresponding
+/// value, both strings. A variable name must follow the rules for
+/// regular
 /// C identifiers. A scenario name must be non-empty and not contain
 /// any null byte.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,10 +39,12 @@ impl Scenario {
         if name.is_empty() || name.contains('\0') {
             return Err(ScenarioError::InvalidName(name));
         }
-        Ok(Scenario {
-               name: name,
-               variables: HashMap::new(),
-           })
+        Ok(
+            Scenario {
+                name: name,
+                variables: HashMap::new(),
+            },
+        )
     }
 
     /// Adds another variable definition of the current set.
@@ -51,8 +55,9 @@ impl Scenario {
     /// with `ParseError::DuplicateVariable` if a variable of this name
     /// already has been added to the scenario.
     pub fn add_variable<S1, S2>(&mut self, name: S1, value: S2) -> Result<(), ScenarioError>
-        where S1: Into<String>,
-              S2: Into<String>
+    where
+        S1: Into<String>,
+        S2: Into<String>,
     {
         let name = name.into();
         let value = value.into();
@@ -107,11 +112,12 @@ impl Scenario {
     /// #Errors
     /// If `strict` is `true` and both scenarios define the same
     /// variable, a `ScenarioError::StrictMergeFailed` is returned.
-    pub fn merge(&mut self,
-                 other: &Scenario,
-                 delimiter: &str,
-                 strict: bool)
-                 -> Result<(), ScenarioError> {
+    pub fn merge(
+        &mut self,
+        other: &Scenario,
+        delimiter: &str,
+        strict: bool,
+    ) -> Result<(), ScenarioError> {
         // Turn (&String, &String) iterator into (String, String) iterator.
         let other_vars = other
             .variables()
@@ -119,7 +125,7 @@ impl Scenario {
         // Merge variable definitions. If an error occurs, build a
         // `ScenarioError::StrictMergeFailed` value and return.
         merge_vars(&mut self.variables, other_vars, strict)
-            .map_err(|varname| fail_strict_merge(varname, &self.name, &other.name))?;
+            .map_err(|varname| fail_strict_merge(varname, &self.name, &other.name),)?;
         // If we merged names before the variables, the error would
         // contain the already-merged name -- thus, we only merge names
         // after merging the variables has succeeded.
@@ -142,7 +148,8 @@ fn merge_names(left: &mut String, delimiter: &str, right: &str) {
 }
 
 fn merge_vars<I>(map: &mut HashMap<String, String>, to_add: I, strict: bool) -> Result<(), String>
-    where I: Iterator<Item = (String, String)>
+where
+    I: Iterator<Item = (String, String)>,
 {
     if strict {
         for (key, value) in to_add {
@@ -188,13 +195,15 @@ impl Display for ScenarioError {
                 ref left,
                 ref right,
             } => {
-                write!(f,
-                       r#"{}: "{}" defined by scenarios "{}" and "{}""#,
-                       self.description(),
-                       varname,
-                       left,
-                       right)
-            }
+                write!(
+                    f,
+                    r#"{}: "{}" defined by scenarios "{}" and "{}""#,
+                    self.description(),
+                    varname,
+                    left,
+                    right
+                )
+            },
         }
     }
 }

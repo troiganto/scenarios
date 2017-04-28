@@ -71,7 +71,8 @@ impl<'a> Merger<'a> {
     ///    `ScenarioError::StrictMergeFailed`. The latter contains
     ///    the names of the offending scenarios and variables.
     pub fn merge<'b, I>(&self, scenarios: I) -> Result
-        where I: 'b + IntoIterator<Item = &'b Scenario>
+    where
+        I: 'b + IntoIterator<Item = &'b Scenario>,
     {
         let mut combined = MergedScenario::new();
         for scenario in scenarios.into_iter() {
@@ -150,14 +151,14 @@ impl MergedScenario {
                 // Set merge result here, evaluate it after the borrow
                 // of `inner` ends.
                 merge_result = inner.merge(other, delimiter, strict);
-            }
+            },
             Err(MergeError::NoScenarios) => {
                 self.0 = Ok(other.clone());
                 return;
-            }
+            },
             Err(_) => {
                 return;
-            }
+            },
         }
         // Now that the borrow of `self` has ended, we can modify it.
         if let Err(err) = merge_result {
@@ -290,7 +291,7 @@ mod tests {
                 assert_eq!(varname, "a".to_owned());
                 assert_eq!(left, "A".to_owned());
                 assert_eq!(right, "B".to_owned());
-            }
+            },
             _ => assert!(false),
         }
     }
@@ -315,9 +316,11 @@ mod tests {
     #[test]
     fn test_merger() {
         let expected = make_scenario("A/B/C", &["a", "aa", "b", "bb", "c", "cc"]);
-        let all = [make_scenario("A", &["a", "aa"]),
-                   make_scenario("B", &["b", "bb"]),
-                   make_scenario("C", &["c", "cc"])];
+        let all = [
+            make_scenario("A", &["a", "aa"]),
+            make_scenario("B", &["b", "bb"]),
+            make_scenario("C", &["c", "cc"]),
+        ];
 
         let actual = Merger::new().with_delimiter("/").merge(&all).unwrap();
         assert_eq!(expected, actual);

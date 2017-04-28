@@ -62,7 +62,7 @@ fn main() {
     let matches = app.clone().get_matches();
 
     // If -h was passed, reduce the help message to nothing and print
-    //it.
+    // it.
     if matches.is_present("short_help") {
         app.after_help("").print_help().unwrap();
         return;
@@ -87,9 +87,11 @@ fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
         .collect::<Result<_, _>>()?;
 
     let merger = scenarios::Merger::new()
-        .with_delimiter(matches
-                            .value_of("delimiter")
-                            .expect("default value is missing"))
+        .with_delimiter(
+            matches
+                .value_of("delimiter")
+                .expect("default value is missing"),
+        )
         .with_strict_mode(!matches.is_present("lax"));
     let consumer: Box<consumers::Consumer> = Box::new(consumers::Printer::new());
     for set_of_scenarios in cartesian::product(&scenario_files) {
@@ -157,6 +159,7 @@ impl From<scenarios::MergeError> for Error {
 }
 
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static LONG_EXPLANATION: &'static str = "\
 This program takes one or more scenario files. A scenario \
 is named set of environment variables to apply at the same \
@@ -210,4 +213,5 @@ When using the --include argument, consider passing it as
     scenarios --include=PATTERN ...
 
 (with an equal sign). Otherwise, your shell might expand \
-the pattern before scenarios gets to see it.";
+the pattern before scenarios gets to see it.\
+";

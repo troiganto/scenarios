@@ -3,7 +3,8 @@
 
 /// Iterator over the Cartesian product of some sub-iterators.
 pub struct Product<'a, C: 'a, T: 'a>
-    where &'a C: IntoIterator<Item = &'a T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
 {
     collections: &'a [C],
     iterators: Vec<<&'a C as IntoIterator>::IntoIter>,
@@ -56,7 +57,8 @@ pub struct Product<'a, C: 'a, T: 'a>
 /// assert_eq!(combinations.next(), None);
 /// ```
 pub fn product<'a, C: 'a, T: 'a>(collections: &'a [C]) -> Product<'a, C, T>
-    where &'a C: IntoIterator<Item = &'a T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
 {
     // Create an unitialized object.
     // we have to fill `iterators` and `next_item`.
@@ -79,7 +81,8 @@ pub fn product<'a, C: 'a, T: 'a>(collections: &'a [C]) -> Product<'a, C, T>
 }
 
 impl<'a, C, T> Product<'a, C, T>
-    where &'a C: IntoIterator<Item = &'a T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
 {
     fn fill_up_next_item(&mut self) {
         for (iterator, element) in
@@ -131,7 +134,8 @@ impl<'a, C, T> Product<'a, C, T>
 }
 
 impl<'a, C, T> Iterator for Product<'a, C, T>
-    where &'a C: IntoIterator<Item = &'a T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
 {
     type Item = Vec<&'a T>;
 
@@ -202,12 +206,16 @@ mod tests {
     fn test_string() {
         use std::iter::FromIterator;
 
-        let letters = [["A".to_string(), "B".to_string()],
-                       ["a".to_string(), "b".to_string()]];
-        let expected = vec!["Aa".to_string(),
-                            "Ab".to_string(),
-                            "Ba".to_string(),
-                            "Bb".to_string()];
+        let letters = [
+            ["A".to_string(), "B".to_string()],
+            ["a".to_string(), "b".to_string()],
+        ];
+        let expected = vec![
+            "Aa".to_string(),
+            "Ab".to_string(),
+            "Ba".to_string(),
+            "Bb".to_string(),
+        ];
         let actual: Vec<String> = cartesian::product(&letters)
             .map(|combo| combo.into_iter().map(String::as_str))
             .map(String::from_iter)
