@@ -11,33 +11,42 @@ use super::Printer;
 const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
 
 
-pub struct CommandLine<Buffer>
+pub struct CommandLine<'a, Buffer>
 where
-    for<'a> &'a Buffer: IntoIterator<Item = &'a str>,
+    Buffer: 'a + AsRef<[&'a str]>,
 {
-    args: Buffer,
+    command_line: Buffer,
     inherit_env: bool,
     insert_name_in_args: bool,
+    _lifetime: ::std::marker::PhantomData<&'a ()>,
 }
 
-impl<Buffer> CommandLine<Buffer>
+impl<'a, Buffer> CommandLine<'a, Buffer>
 where
-    for<'a> &'a Buffer: IntoIterator<Item = &'a str>,
+    Buffer: 'a + AsRef<[&'a str]>,
 {
-    pub fn new(args: Buffer) -> Option<Self> {
-        if args.into_iter().next().is_none() {
+    pub fn new(command_line: Buffer) -> Option<Self> {
+        if command_line.as_ref().is_empty() {
             return None;
         }
-        CommandLine {
-                args: args,
-                inherit_env: true,
-                insert_name_in_args: false,
-            }
-            .into()
+        let result = CommandLine {
+            command_line: command_line,
+            inherit_env: true,
+            insert_name_in_args: false,
+            _lifetime: Default::default(),
+        };
+        Some(result)
     }
 
-    pub fn args(&self) -> <&Buffer as IntoIterator>::IntoIter {
-        self.args.into_iter()
+    pub fn command_line(&self) -> &[&'a str] {
+        self.command_line.as_ref()
+    }
+
+    pub fn program_args(&self) -> (&'a str, &[&'a str]) {
+        let (&program, args) = self.command_line()
+            .split_first()
+            .expect("command line is empty");
+        (program, args)
     }
 
     pub fn inherit_env(&self) -> bool {
@@ -73,8 +82,7 @@ where
         V: AsRef<OsStr>,
         N: AsRef<str> + AsRef<OsStr>,
     {
-        let mut args = self.args.into_iter();
-        let program = args.next().expect("CommandLine::args is empty");
+        let (program, args) = self.program_args();
         let mut cmd = Command::new(program);
         // If we want to insert the name into the args, we have to
         // iterate over the args -- otherwise, we can pass them as a
@@ -101,12 +109,26 @@ where
     }
 }
 
-impl<Buffer> Consumer for CommandLine<Buffer>
+impl<'a, Buffer> Consumer for CommandLine<'a, Buffer>
 where
-    for<'a> &'a Buffer: IntoIterator<Item = &'a str>,
+    Buffer: 'a + AsRef<[&'a str]>,
 {
     fn consume(&self, scenario: &Scenario) {
         self.execute(scenario.variables(), scenario.name())
             .expect("executing process failed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_echo() {
+        let cl = CommandLine::new(["echo", "-n"])
+            .unwrap()
+            .with_insert_name_in_args(true);
+        let env: &[(&str, &str)] = &[];
+        cl.execute(env.into_iter().cloned(), "").unwrap();
     }
 }
