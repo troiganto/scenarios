@@ -1,7 +1,7 @@
 
 use std::io;
 use std::ffi::OsStr;
-use std::process::{Command, ExitStatus};
+use std::process::{Command, ExitStatus, Output};
 
 use scenarios::Scenario;
 use super::Consumer;
@@ -75,12 +75,31 @@ where
         self
     }
 
-    pub fn execute<I, K, V, N>(&self, env_vars: I, name: N) -> io::Result<ExitStatus>
+    pub fn execute_status<I, K, V, N>(&self, env_vars: I, name: N) -> io::Result<ExitStatus>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
         N: AsRef<str> + AsRef<OsStr>,
+    {
+        self.create_command(env_vars.into_iter(), name.as_ref()).status()
+    }
+
+    pub fn execute_output<I, K, V, N>(&self, env_vars: I, name: N) -> io::Result<Output>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+        N: AsRef<str> + AsRef<OsStr>,
+    {
+        self.create_command(env_vars.into_iter(), name.as_ref()).output()
+    }
+
+    fn create_command<I, K, V>(&self, env_vars: I, name: &str) -> Command
+    where
+        I: Iterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
     {
         let (program, args) = self.program_args();
         let mut cmd = Command::new(program);
@@ -91,7 +110,7 @@ where
             let mut printer = Printer::new().with_terminator("");
             for arg in args {
                 printer.set_template(arg);
-                cmd.arg(printer.format(name.as_ref()));
+                cmd.arg(printer.format(name));
             }
         } else {
             cmd.args(args);
@@ -104,8 +123,7 @@ where
             cmd.env(k, v);
         }
         cmd.env(SCENARIOS_NAME_NAME, name);
-        // Execute.
-        cmd.status()
+        cmd
     }
 }
 
@@ -114,7 +132,7 @@ where
     Buffer: 'a + AsRef<[&'a str]>,
 {
     fn consume(&self, scenario: &Scenario) {
-        self.execute(scenario.variables(), scenario.name())
+        self.execute_status(scenario.variables(), scenario.name())
             .expect("executing process failed");
     }
 }
@@ -129,6 +147,6 @@ mod tests {
             .unwrap()
             .with_insert_name_in_args(true);
         let env: &[(&str, &str)] = &[];
-        cl.execute(env.into_iter().cloned(), "").unwrap();
+        cl.execute_status(env.into_iter().cloned(), "").unwrap();
     }
 }
