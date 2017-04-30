@@ -8,6 +8,7 @@ use super::Consumer;
 use super::Printer;
 
 
+/// The name of the environment variable to hold the scenario name.
 const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
 
 
@@ -18,6 +19,7 @@ where
     command_line: Buffer,
     inherit_env: bool,
     insert_name_in_args: bool,
+    add_scenarios_name: bool,
     _lifetime: ::std::marker::PhantomData<&'a ()>,
 }
 
@@ -33,6 +35,7 @@ where
             command_line: command_line,
             inherit_env: true,
             insert_name_in_args: false,
+            add_scenarios_name: true,
             _lifetime: Default::default(),
         };
         Some(result)
@@ -72,6 +75,19 @@ where
 
     pub fn with_insert_name_in_args(mut self, insert_name_in_args: bool) -> Self {
         self.set_insert_name_in_args(insert_name_in_args);
+        self
+    }
+
+    pub fn add_scenarios_name(&self) -> bool {
+        self.add_scenarios_name
+    }
+
+    pub fn set_add_scenarios_name(&mut self, add_scenarios_name: bool) {
+        self.add_scenarios_name = add_scenarios_name;
+    }
+
+    pub fn with_add_scenarios_name(mut self, add_scenarios_name: bool) -> Self {
+        self.set_add_scenarios_name(add_scenarios_name);
         self
     }
 
@@ -124,7 +140,9 @@ where
         for (k, v) in env_vars.into_iter() {
             cmd.env(k, v);
         }
-        cmd.env(SCENARIOS_NAME_NAME, name);
+        if self.add_scenarios_name {
+            cmd.env(SCENARIOS_NAME_NAME, name);
+        }
         cmd
     }
 }
