@@ -82,7 +82,8 @@ where
         V: AsRef<OsStr>,
         N: AsRef<str> + AsRef<OsStr>,
     {
-        self.create_command(env_vars.into_iter(), name.as_ref()).status()
+        self.create_command(env_vars.into_iter(), name.as_ref())
+            .status()
     }
 
     pub fn execute_output<I, K, V, N>(&self, env_vars: I, name: N) -> io::Result<Output>
@@ -92,7 +93,8 @@ where
         V: AsRef<OsStr>,
         N: AsRef<str> + AsRef<OsStr>,
     {
-        self.create_command(env_vars.into_iter(), name.as_ref()).output()
+        self.create_command(env_vars.into_iter(), name.as_ref())
+            .output()
     }
 
     fn create_command<I, K, V>(&self, env_vars: I, name: &str) -> Command
@@ -143,10 +145,20 @@ mod tests {
 
     #[test]
     fn test_echo() {
-        let cl = CommandLine::new(["echo", "-n"])
+        let cl = CommandLine::new(["echo", "-n"]).unwrap();
+        let env: &[(&str, &str)] = &[];
+        cl.execute_status(env.into_iter().cloned(), "").unwrap();
+    }
+
+    #[test]
+    fn test_insert_name() {
+        let cl = CommandLine::new(["echo", "a cool {}!"])
             .unwrap()
             .with_insert_name_in_args(true);
         let env: &[(&str, &str)] = &[];
-        cl.execute_status(env.into_iter().cloned(), "").unwrap();
+        let output = cl.execute_output(env.into_iter().cloned(), "name")
+            .unwrap();
+        let output = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(output, "a cool name!\n".to_owned());
     }
 }
