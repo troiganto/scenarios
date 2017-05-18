@@ -1,6 +1,5 @@
 
 use scenarios::Scenario;
-use super::consumer::{self, Consumer};
 
 /// The string pattern that gets replaced in `Printer::template`.
 const PATTERN: &'static str = "{}";
@@ -70,18 +69,15 @@ impl<'template, 'terminator> Printer<'template, 'terminator> {
         result.push_str(self.terminator);
         result
     }
+
+    /// Formats the scenario's name and prints it to `stdout`.
+    pub fn print_scenario(&self, scenario: &Scenario) {
+        print!("{}", self.format(scenario.name()));
+    }
 }
 
 impl<'a, 'b> Default for Printer<'a, 'b> {
     fn default() -> Self {
         Printer::new()
-    }
-}
-
-impl<'a, 'b> Consumer for Printer<'a, 'b> {
-    /// Prints formatted scenario names to `stdout`.
-    fn consume(&self, scenario: &Scenario) -> consumer::Result {
-        print!("{}", self.format(scenario.name()));
-        Ok(())
     }
 }

@@ -5,7 +5,6 @@ use std::process::{Command, ExitStatus, Output};
 
 use scenarios::Scenario;
 use super::Printer;
-use super::consumer::{self, Consumer};
 
 
 /// The name of the environment variable to hold the scenario name.
@@ -100,6 +99,11 @@ where
         (program, args)
     }
 
+    /// Executes the command line in the given scenario.
+    pub fn execute(&self, scenario: &Scenario) -> io::Result<ExitStatus> {
+        self.execute_status(scenario.variables(), scenario.name())
+    }
+
     /// Executes the command line and returns its exit status.
     ///
     /// The parameter `env_vars` should be set to the environment
@@ -167,16 +171,6 @@ where
     }
 }
 
-impl<'a, Buffer> Consumer for CommandLine<'a, Buffer>
-where
-    Buffer: 'a + AsRef<[&'a str]>,
-{
-    /// Execute the command line under the given scenario.
-    fn consume(&self, scenario: &Scenario) -> consumer::Result {
-        self.execute_status(scenario.variables(), scenario.name())?;
-        Ok(())
-    }
-}
 
 #[cfg(test)]
 mod tests {
