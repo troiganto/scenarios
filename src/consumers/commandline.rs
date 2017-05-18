@@ -4,8 +4,8 @@ use std::ffi::OsStr;
 use std::process::{Command, ExitStatus, Output};
 
 use scenarios::Scenario;
-use super::Consumer;
 use super::Printer;
+use super::consumer::{self, Consumer};
 
 
 /// The name of the environment variable to hold the scenario name.
@@ -211,9 +211,9 @@ where
     Buffer: 'a + AsRef<[&'a str]>,
 {
     /// Execute the command line under the given scenario.
-    fn consume(&self, scenario: &Scenario) {
-        self.execute_status(scenario.variables(), scenario.name())
-            .expect("executing process failed");
+    fn consume(&self, scenario: &Scenario) -> consumer::Result {
+        self.execute_status(scenario.variables(), scenario.name())?;
+        Ok(())
     }
 }
 

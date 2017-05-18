@@ -96,7 +96,7 @@ fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
     let consumer: Box<consumers::Consumer> = Box::new(consumers::Printer::new());
     for set_of_scenarios in cartesian::product(&scenario_files) {
         let combined_scenario = merger.merge(set_of_scenarios.into_iter())?;
-        consumer.consume(&combined_scenario);
+        consumer.consume(&combined_scenario)?;
     }
     Ok(())
 }
@@ -106,6 +106,7 @@ fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
 enum Error {
     FileParseError(scenarios::FileParseError),
     ScenarioError(scenarios::ScenarioError),
+    ConsumerError(consumers::ConsumerError),
     NoScenarios,
 }
 
@@ -114,6 +115,7 @@ impl Display for Error {
         match *self {
             Error::FileParseError(ref err) => err.fmt(f),
             Error::ScenarioError(ref err) => err.fmt(f),
+            Error::ConsumerError(ref err) => err.fmt(f),
             Error::NoScenarios => write!(f, "{}", self.description()),
         }
     }
@@ -124,6 +126,7 @@ impl StdError for Error {
         match *self {
             Error::FileParseError(ref err) => err.description(),
             Error::ScenarioError(ref err) => err.description(),
+            Error::ConsumerError(ref err) => err.description(),
             Error::NoScenarios => "no scenarios provided",
         }
     }
@@ -132,6 +135,7 @@ impl StdError for Error {
         match *self {
             Error::FileParseError(ref err) => Some(err),
             Error::ScenarioError(ref err) => Some(err),
+            Error::ConsumerError(ref err) => Some(err),
             Error::NoScenarios => None,
         }
     }
@@ -155,6 +159,12 @@ impl From<scenarios::MergeError> for Error {
             scenarios::MergeError::NoScenarios => Error::NoScenarios,
             scenarios::MergeError::ScenarioError(err) => Error::ScenarioError(err),
         }
+    }
+}
+
+impl From<consumers::ConsumerError> for Error {
+    fn from(err: consumers::ConsumerError) -> Self {
+        Error::ConsumerError(err)
     }
 }
 
