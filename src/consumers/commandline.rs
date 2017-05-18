@@ -30,13 +30,13 @@ where
     command_line: Buffer,
     /// If `false`, clear the child process's environment before adding
     /// the scenario's variable definitions.
-    inherit_env: bool,
+    pub inherit_env: bool,
     /// If `true`, use a `Printer` to inser the scenario's name into
     /// the command line when executing it.
-    insert_name_in_args: bool,
+    pub insert_name_in_args: bool,
     /// If `true`, always define an additional environment variable
     /// with name `SCENARIOS_NAME_NAME` containing the scenario's name.
-    add_scenarios_name: bool,
+    pub add_scenarios_name: bool,
     /// Phantom data to connect this object's lifetime to that of the
     /// string slices in the backing buffer.
     _lifetime: ::std::marker::PhantomData<&'a ()>,
@@ -98,45 +98,6 @@ where
             .split_first()
             .expect("command line is empty");
         (program, args)
-    }
-
-    pub fn inherit_env(&self) -> bool {
-        self.inherit_env
-    }
-
-    pub fn set_inherit_env(&mut self, inherit_env: bool) {
-        self.inherit_env = inherit_env;
-    }
-
-    pub fn with_inherit_env(mut self, inherit_env: bool) -> Self {
-        self.set_inherit_env(inherit_env);
-        self
-    }
-
-    pub fn insert_name_in_args(&self) -> bool {
-        self.insert_name_in_args
-    }
-
-    pub fn set_insert_name_in_args(&mut self, insert_name_in_args: bool) {
-        self.insert_name_in_args = insert_name_in_args;
-    }
-
-    pub fn with_insert_name_in_args(mut self, insert_name_in_args: bool) -> Self {
-        self.set_insert_name_in_args(insert_name_in_args);
-        self
-    }
-
-    pub fn add_scenarios_name(&self) -> bool {
-        self.add_scenarios_name
-    }
-
-    pub fn set_add_scenarios_name(&mut self, add_scenarios_name: bool) {
-        self.add_scenarios_name = add_scenarios_name;
-    }
-
-    pub fn with_add_scenarios_name(mut self, add_scenarios_name: bool) -> Self {
-        self.set_add_scenarios_name(add_scenarios_name);
-        self
     }
 
     /// Executes the command line and returns its exit status.
@@ -230,9 +191,8 @@ mod tests {
 
     #[test]
     fn test_insert_name() {
-        let cl = CommandLine::new(["echo", "a cool {}!"])
-            .unwrap()
-            .with_insert_name_in_args(true);
+        let mut cl = CommandLine::new(["echo", "a cool {}!"]).unwrap();
+        cl.insert_name_in_args = true;
         let env: &[(&str, &str)] = &[];
         let output = cl.execute_output(env.into_iter().cloned(), "name")
             .unwrap();
