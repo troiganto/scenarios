@@ -7,6 +7,7 @@ description = "Run a command line multiple times in different environments."
 [dependencies]
 regex = "*"
 lazy_static = "*"
+num_cpus = "*"
 
 [dependencies.clap]
 version = "*"
