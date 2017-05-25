@@ -12,10 +12,14 @@ mod cartesian;
 mod consumers;
 
 
-use std::error::Error as StdError;
+use std::io;
 use std::fmt::{self, Display};
+use std::error::Error as StdError;
+
 use clap::{Arg, App};
+
 use scenarios::Scenario;
+
 
 fn main() {
     let app = App::new(crate_name!())
@@ -56,7 +60,12 @@ fn main() {
              .help("Input scenario files. If multiple files are \
                     passed, all possible combinations between them \
                     are used. Pass \"-\" to read from stdin. You may \
-                    pass this option more than once."));
+                    pass this option more than once."))
+        // Output control.
+        .arg(Arg::with_name("command_line")
+             .takes_value(true)
+             .multiple(true)
+             .help("The command line to execute."));
 
     // We clone `app` here because `get_matches` consumes it -- but we
     // might still need it to print the short help!
@@ -101,7 +110,26 @@ fn try_main<'a>(args: &clap::ArgMatches<'a>) -> Result<(), Error> {
         },
     );
 
-    handle_printing(combined_scenarios, &args)
+    if args.is_present("command_line") {
+        handle_command_line(combined_scenarios, &args)
+    } else {
+        handle_printing(combined_scenarios, &args)
+    }
+}
+
+fn handle_command_line<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Result<(), Error>
+where
+    I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
+{
+    let command_line: Vec<_> = args.values_of("command_line")
+        .ok_or(Error::NoCommandLine)?
+        .collect();
+    let command_line = consumers::CommandLine::new(command_line)
+        .ok_or(Error::NoCommandLine)?;
+    for scenario in scenarios {
+        command_line.execute(&scenario?)?;
+    }
+    Ok(())
 }
 
 fn handle_printing<'a, I>(scenarios: I, _args: &clap::ArgMatches<'a>) -> Result<(), Error>
@@ -118,17 +146,20 @@ where
 
 #[derive(Debug)]
 enum Error {
+    IoError(io::Error),
     FileParseError(scenarios::FileParseError),
     ScenarioError(scenarios::ScenarioError),
     NoScenarios,
+    NoCommandLine,
 }
 
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            Error::IoError(ref err) => err.fmt(f),
             Error::FileParseError(ref err) => err.fmt(f),
             Error::ScenarioError(ref err) => err.fmt(f),
-            Error::NoScenarios => write!(f, "{}", self.description()),
+            _ => write!(f, "{}", self.description()),
         }
     }
 }
@@ -136,18 +167,27 @@ impl Display for Error {
 impl StdError for Error {
     fn description(&self) -> &str {
         match *self {
+            Error::IoError(ref err) => err.description(),
             Error::FileParseError(ref err) => err.description(),
             Error::ScenarioError(ref err) => err.description(),
             Error::NoScenarios => "no scenarios provided",
+            Error::NoCommandLine => "no command line provided",
         }
     }
 
     fn cause(&self) -> Option<&std::error::Error> {
         match *self {
+            Error::IoError(ref err) => Some(err),
             Error::FileParseError(ref err) => Some(err),
             Error::ScenarioError(ref err) => Some(err),
-            Error::NoScenarios => None,
+            _ => None,
         }
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Error::IoError(err)
     }
 }
 
