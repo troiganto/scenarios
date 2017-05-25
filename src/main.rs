@@ -26,51 +26,51 @@ fn main() {
         .help_message("Print detailed help information.")
         // General args.
         .arg(Arg::with_name("short_help")
-                 .short("h")
-                 .help("Print short help information."))
+             .short("h")
+             .help("Print short help information."))
         .arg(Arg::with_name("delimiter")
-                 .short("d")
-                 .long("delimiter")
-                 .takes_value(true)
-                 .default_value(", ")
-                 .help("A delimiter to use when merging the names \
-                        of a scenario combination."))
+             .short("d")
+             .long("delimiter")
+             .takes_value(true)
+             .default_value(", ")
+             .help("A delimiter to use when merging the names of a \
+                    scenario combination."))
         // Strict mode control.
         .arg(Arg::with_name("strict")
-                 .short("s")
-                 .long("strict")
-                 .conflicts_with("lax")
-                 .help("This is the default. No two scenario files \
-                        may define the same scenario name or \
-                        environment variable."))
+             .short("s")
+             .long("strict")
+             .conflicts_with("lax")
+             .help("This is the default. No two scenario files may \
+                    define the same scenario name or environment \
+                    variable."))
         .arg(Arg::with_name("lax")
-                 .short("l")
-                 .long("lax")
-                 .help("Disable strict mode."))
+             .short("l")
+             .long("lax")
+             .help("Disable strict mode."))
         // Input control.
         .arg(Arg::with_name("input")
-                 .short("i")
-                 .takes_value(true)
-                 .number_of_values(1)
-                 .multiple(true)
-                 .help("Input scenario files. If multiple files are \
-                 passed, all possible combinations between them are \
-                 used. Pass \"-\" to read from stdin. You may pass \
-                 this option more than once."));
+             .short("i")
+             .takes_value(true)
+             .number_of_values(1)
+             .multiple(true)
+             .help("Input scenario files. If multiple files are \
+                    passed, all possible combinations between them \
+                    are used. Pass \"-\" to read from stdin. You may \
+                    pass this option more than once."));
 
     // We clone `app` here because `get_matches` consumes it -- but we
     // might still need it to print the short help!
-    let matches = app.clone().get_matches();
+    let args = app.clone().get_matches();
 
     // If -h was passed, reduce the help message to nothing and print
     // it.
-    if matches.is_present("short_help") {
+    if args.is_present("short_help") {
         app.after_help("").print_help().unwrap();
         return;
     }
 
     // Catch all errors, print them to stderr, and exit with code 1.
-    if let Err(err) = try_main(matches) {
+    if let Err(err) = try_main(args) {
         let msg = err.to_string();
         let kind = clap::ErrorKind::Format;
         let err = clap::Error::with_description(&msg, kind);
@@ -79,22 +79,22 @@ fn main() {
 }
 
 
-fn try_main<'a>(matches: clap::ArgMatches<'a>) -> Result<(), Error> {
+fn try_main<'a>(args: clap::ArgMatches<'a>) -> Result<(), Error> {
     // Collect scenario file names.
-    let scenario_files: Vec<Vec<Scenario>> = matches
-        .values_of("input")
+    let scenario_files: Vec<Vec<Scenario>> = args.values_of("input")
         .ok_or(Error::NoScenarios)?
         .map(scenarios::from_file)
         .collect::<Result<_, _>>()?;
 
     let merger = scenarios::Merger::new()
         .with_delimiter(
-            matches
-                .value_of("delimiter")
+            args.value_of("delimiter")
                 .expect("default value is missing"),
         )
-        .with_strict_mode(!matches.is_present("lax"));
+        .with_strict_mode(!args.is_present("lax"));
+
     let printer = consumers::Printer::new();
+
     for set_of_scenarios in cartesian::product(&scenario_files) {
         let combined_scenario = merger.merge(set_of_scenarios.into_iter())?;
         printer.print_scenario(&combined_scenario);
