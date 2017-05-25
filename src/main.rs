@@ -70,7 +70,7 @@ fn main() {
     }
 
     // Catch all errors, print them to stderr, and exit with code 1.
-    if let Err(err) = try_main(args) {
+    if let Err(err) = try_main(&args) {
         let msg = err.to_string();
         let kind = clap::ErrorKind::Format;
         let err = clap::Error::with_description(&msg, kind);
@@ -79,13 +79,14 @@ fn main() {
 }
 
 
-fn try_main<'a>(args: clap::ArgMatches<'a>) -> Result<(), Error> {
+fn try_main<'a>(args: &clap::ArgMatches<'a>) -> Result<(), Error> {
     // Collect scenario file names.
     let scenario_files: Vec<Vec<Scenario>> = args.values_of("input")
         .ok_or(Error::NoScenarios)?
         .map(scenarios::from_file)
         .collect::<Result<_, _>>()?;
 
+    // Create and configure a scenarios merger.
     let merger = scenarios::Merger::new()
         .with_delimiter(
             args.value_of("delimiter")
@@ -93,11 +94,23 @@ fn try_main<'a>(args: clap::ArgMatches<'a>) -> Result<(), Error> {
         )
         .with_strict_mode(!args.is_present("lax"));
 
-    let printer = consumers::Printer::new();
+    // Use the merger to get a list of all combinations of scenarios.
+    let combined_scenarios = cartesian::product(&scenario_files).map(
+        |set_of_scenarios| {
+            merger.merge(set_of_scenarios.into_iter())
+        },
+    );
 
-    for set_of_scenarios in cartesian::product(&scenario_files) {
-        let combined_scenario = merger.merge(set_of_scenarios.into_iter())?;
-        printer.print_scenario(&combined_scenario);
+    handle_printing(combined_scenarios, &args)
+}
+
+fn handle_printing<'a, I>(scenarios: I, _args: &clap::ArgMatches<'a>) -> Result<(), Error>
+where
+    I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
+{
+    let printer = consumers::Printer::new();
+    for scenario in scenarios {
+        printer.print_scenario(&scenario?);
     }
     Ok(())
 }
