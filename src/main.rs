@@ -264,10 +264,9 @@ impl From<scenarios::MergeError> for Error {
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static LONG_EXPLANATION: &'static str = "\
-This program takes one or more scenario files. A scenario \
-is named set of environment variables to apply at the same \
-time. A scenario file contains a list of scenarios in the \
-following format:
+This program takes one or more scenario files. A scenario is named \
+set of environment variables to apply at the same time. A scenario \
+file contains a list of scenarios in the following format:
 
     [First scenario name]
     FIRST_VARIABLE = value
@@ -277,10 +276,9 @@ following format:
     FIRST_VARIABLE = value
     SECOND_VARIABLE = value
 
-If you pass several scenario files, all possible \
-combinations that take one scenario from each file are \
-executed. For instance, assume you have the following \
-scenario files:
+If you pass several scenario files, all possible combinations that \
+take one scenario from each file are executed. For instance, assume \
+you have the following scenario files:
 
     - `numbers.ini` with scenarios named \"1\", \"2\", and \"3\";
     - `letters.ini` with scenarios named \"a\" and \"b\";
@@ -289,33 +287,21 @@ Then, the following call:
 
     scenarios -i numbers.ini -i letters.ini some_program
 
-will execute the following six scenario combinations: \
-\"1, a\"; \"1, b\"; \"2, a\"; \"2, b\"; \"3, a\"; and \
-\"3, b\".
+will execute the following six scenario combinations: \"1, a\"; \
+\"1, b\"; \"2, a\"; \"2, b\"; \"3, a\"; and \"3, b\".
 
-It is an error if two files define the same scenario name, \
-or if two scenarios from different files define the same \
-environment variable. This check can be disabled by passing \
-the --lax option. In that case, later definitions of \
-variables will overwrite former definitions. \
+It is an error if two files define the same scenario name, or if two \
+scenarios from different files define the same environment variable. \
+This check can be disabled by passing the --lax option. In that case, \
+later definitions of variables will overwrite former definitions.
 
-After reading the scenario files, the remainder of the \
-command line, noted above as `...`, is executed once for \
-each combination of scenarios. This may be parallelized by \
-passing the --jobs option.
+After reading the scenario files, the remainder of the command line, \
+noted above as `command_line`, is executed once for each combination \
+of scenarios. This may be parallelized by passing the --jobs option.
 
-When running, scenarios adds an additional variable \
-SCENARIOS_NAME to each scenario (unless --no-name-variable is passed). \
-This variable contains the \
-name of the current combination of scenarios. Strict mode \
-will prevent you from defining SCENARIOS_NAME yourself. \
-With the --lax option, your own definition will silently be \
-overwritten.
-
-When using the --include argument, consider passing it as
-
-    scenarios --include=PATTERN ...
-
-(with an equal sign). Otherwise, your shell might expand \
-the pattern before scenarios gets to see it.\
+When running, scenarios adds an additional variable SCENARIOS_NAME to \
+each scenario (unless --no-name-variable is passed). This variable \
+contains the name of the current combination of scenarios. Strict \
+mode will prevent you from defining SCENARIOS_NAME yourself. With the \
+--lax option, your own definition will silently be overwritten.
 ";
