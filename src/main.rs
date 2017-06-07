@@ -41,10 +41,12 @@ fn main() {
              .help("A delimiter to use when merging the names of a \
                     scenario combination. [default: ', ']"))
         // Strict mode control.
+        .group(ArgGroup::with_name("strict_mode")
+               .args(&["strict", "lax"])
+               .required(false))
         .arg(Arg::with_name("strict")
              .short("s")
              .long("strict")
-             .conflicts_with("lax")
              .help("This is the default. No two scenario files may \
                     define the same scenario name or environment \
                     variable."))
