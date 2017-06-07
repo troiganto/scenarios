@@ -39,9 +39,6 @@ impl From<usize> for JobCount {
 pub struct Pool {
     /// The maximum number of concurrent processes.
     pub num_jobs: JobCount,
-    /// If `true`, non-zero exit codes from processes get ignored. This
-    /// is set to `false` by default.
-    pub keep_going: bool,
     /// The internal queue of added processes.
     queue: VecDeque<Child>,
 }
@@ -55,7 +52,6 @@ impl Pool {
     pub fn new<N: Into<JobCount>>(num_jobs: N) -> Self {
         Pool {
             num_jobs: num_jobs.into(),
-            keep_going: false,
             queue: VecDeque::new(),
         }
     }
@@ -69,12 +65,10 @@ impl Pool {
     /// # Errors
     /// If the pool is not full, it does not block and always succeeds.
     ///
-    /// This call fails if any IO error occurs while waiting.
-    ///
-    /// If `keep_going` is set to `false` (the default), and a
-    /// waited-on process fails, the calls fails with
-    /// `Error::CommandFailed`. Failure means e.g. a non-zero exit
-    /// status or a signal-induced abort.
+    /// If a waited-on process fails, this call fails with
+    /// `Error::CommandFailed`. A waited-on process fails e.g. by
+    /// returning a non-zero exit status or by aborting through a
+    /// signal.
     ///
     /// Even if an error occurs, the passed process is added to the
     /// queue in any case.
@@ -83,7 +77,7 @@ impl Pool {
         // If the queue is full, block until one job is finished.
         if self.queue.len() == self.num_jobs.get() {
             let oldest_job = self.queue.pop_front().expect("pop from empty queue");
-            result = Pool::wait_for_job(oldest_job, self.keep_going);
+            result = Pool::wait_for_job(oldest_job);
         }
         self.queue.push_back(process);
         result
@@ -94,22 +88,24 @@ impl Pool {
     /// # Errors
     /// This call fails if any IO error occurs while waiting.
     ///
-    /// If `keep_going` is set to `false` (the default), and a
-    /// waited-on process fails, this call fails as well.
+    /// If a waited-on process fails, this call fails with
+    /// `Error::CommandFailed`. A waited-on process fails e.g. by
+    /// returning a non-zero exit status or by aborting through a
+    /// signal.
     ///
     /// Even if the call fails, all processes are waited on.
     pub fn join(&mut self) -> Result<(), Error> {
         let mut result = Ok(());
         for job in self.queue.drain(..) {
-            result = result.and(Pool::wait_for_job(job, self.keep_going));
+            result = result.and(Pool::wait_for_job(job));
         }
         result
     }
 
     /// Implementation of the waiting behavior of `join()` and `add()`.
-    fn wait_for_job(mut job: Child, keep_going: bool) -> Result<(), Error> {
+    fn wait_for_job(mut job: Child) -> Result<(), Error> {
         let exit_status = job.wait()?;
-        if exit_status.success() || keep_going {
+        if exit_status.success() {
             Ok(())
         } else {
             Err(Error::CommandFailed(exit_status))
