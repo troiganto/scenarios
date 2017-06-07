@@ -198,6 +198,7 @@ enum Error {
     IoError(io::Error),
     FileParseError(scenarios::FileParseError),
     ScenarioError(scenarios::ScenarioError),
+    PoolError(consumers::PoolError),
     NoScenarios,
     NoCommandLine,
 }
@@ -208,6 +209,7 @@ impl Display for Error {
             Error::IoError(ref err) => err.fmt(f),
             Error::FileParseError(ref err) => err.fmt(f),
             Error::ScenarioError(ref err) => err.fmt(f),
+            Error::PoolError(ref err) => err.fmt(f),
             _ => write!(f, "{}", self.description()),
         }
     }
@@ -219,6 +221,7 @@ impl StdError for Error {
             Error::IoError(ref err) => err.description(),
             Error::FileParseError(ref err) => err.description(),
             Error::ScenarioError(ref err) => err.description(),
+            Error::PoolError(ref err) => err.description(),
             Error::NoScenarios => "no scenarios provided",
             Error::NoCommandLine => "no command line provided",
         }
@@ -229,6 +232,7 @@ impl StdError for Error {
             Error::IoError(ref err) => Some(err),
             Error::FileParseError(ref err) => Some(err),
             Error::ScenarioError(ref err) => Some(err),
+            Error::PoolError(ref err) => Some(err),
             _ => None,
         }
     }
@@ -258,6 +262,12 @@ impl From<scenarios::MergeError> for Error {
             scenarios::MergeError::NoScenarios => Error::NoScenarios,
             scenarios::MergeError::ScenarioError(err) => Error::ScenarioError(err),
         }
+    }
+}
+
+impl From<consumers::PoolError> for Error {
+    fn from(err: consumers::PoolError) -> Self {
+        Error::PoolError(err)
     }
 }
 
