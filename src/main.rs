@@ -16,7 +16,7 @@ use std::io;
 use std::fmt::{self, Display};
 use std::error::Error as StdError;
 
-use clap::{Arg, App};
+use clap::{Arg, ArgGroup, App};
 
 use scenarios::Scenario;
 
@@ -62,7 +62,28 @@ fn main() {
                     passed, all possible combinations between them \
                     are used. Pass '-' to read from stdin. You may \
                     pass this option more than once."))
-        // Output control.
+        // Only one of --print, --print0, and <command> may be passed.
+        .group(ArgGroup::with_name("output")
+            .args(&["print", "print0", "command_line"])
+            .required(false))
+        // Scenario name printing.
+        .arg(Arg::with_name("print")
+             .long("print")
+             .min_values(0)
+             .max_values(1)
+             .help("Do not execute a command, just print \
+                    SCENARIOS_NAME for all combinations of scenarios \
+                    to stdout. Names are separated by newlines. An \
+                    optional format string may be passed, in which \
+                    '{}' gets replaced with SCENARIOS_NAME."))
+        .arg(Arg::with_name("print0")
+             .long("print0")
+             .min_values(0)
+             .max_values(1)
+             .help("Like --print, but separate scenario combinations \
+                    with a null byte instead of a newline. (This is \
+                    useful in combination with 'xargs -0'.)"))
+        // Command line execution.
         .arg(Arg::with_name("command_line")
              .takes_value(true)
              .multiple(true)
@@ -133,11 +154,17 @@ where
     Ok(())
 }
 
-fn handle_printing<'a, I>(scenarios: I, _args: &clap::ArgMatches<'a>) -> Result<(), Error>
+fn handle_printing<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
-    let printer = consumers::Printer::new();
+    let mut printer = consumers::Printer::new();
+    if args.is_present("print0") {
+        printer.set_terminator("\0");
+    }
+    if let Some(template) = args.value_of("print0").or(args.value_of("print")) {
+        printer.set_template(template);
+    }
     for scenario in scenarios {
         printer.print_scenario(&scenario?);
     }
