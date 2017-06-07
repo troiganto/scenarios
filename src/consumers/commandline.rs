@@ -1,7 +1,7 @@
 
 use std::io;
 use std::ffi::OsStr;
-use std::process::{Command, ExitStatus, Output};
+use std::process::{Command, Child, ExitStatus, Output};
 
 use scenarios::Scenario;
 use super::Printer;
@@ -41,6 +41,7 @@ where
     _lifetime: ::std::marker::PhantomData<&'a ()>,
 }
 
+// FIXME: Improve this interface.
 impl<'a, Buffer> CommandLine<'a, Buffer>
 where
     Buffer: 'a + AsRef<[&'a str]>,
@@ -97,6 +98,12 @@ where
             .split_first()
             .expect("command line is empty");
         (program, args)
+    }
+
+    /// Spawn a new process from the command line and a given scenario.
+    pub fn spawn(&self, scenario: &Scenario) -> io::Result<Child> {
+        self.create_command(scenario.variables().into_iter(), scenario.name())
+            .spawn()
     }
 
     /// Executes the command line in the given scenario.
