@@ -27,9 +27,9 @@ where
 {
     /// The command line containing the program and its arguments.
     command_line: Buffer,
-    /// If `false`, clear the child process's environment before adding
+    /// If `true`, clear the child process's environment before adding
     /// the scenario's variable definitions.
-    pub inherit_env: bool,
+    pub ignore_env: bool,
     /// If `true`, use a `Printer` to inser the scenario's name into
     /// the command line when executing it.
     pub insert_name_in_args: bool,
@@ -75,8 +75,8 @@ where
         }
         let result = CommandLine {
             command_line: command_line,
-            inherit_env: true,
-            insert_name_in_args: false,
+            ignore_env: false,
+            insert_name_in_args: true,
             add_scenarios_name: true,
             _lifetime: Default::default(),
         };
@@ -158,7 +158,7 @@ where
             cmd.args(args);
         }
         // Set environment variables.
-        if self.inherit_env {
+        if self.ignore_env {
             cmd.env_clear();
         }
         for (k, v) in env_vars.into_iter() {
