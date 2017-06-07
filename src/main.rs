@@ -87,7 +87,23 @@ fn main() {
         .arg(Arg::with_name("command_line")
              .takes_value(true)
              .multiple(true)
-             .help("The command line to execute."));
+             .help("The command line to execute."))
+        .arg(Arg::with_name("ignore_env")
+             .short("I")
+             .long("ignore-env")
+             .requires("command_line")
+             .help("Do not export the current environment the \
+                    subshells."))
+        .arg(Arg::with_name("no_insert_name")
+             .long("no-insert-name")
+             .requires("command_line")
+             .help("Do not replace '{}' with SCENARIOS_NAME in the \
+                    command line."))
+        .arg(Arg::with_name("no_name_variable")
+             .long("no-name-variable")
+             .requires("command_line")
+             .help("Do not export the environment variable \
+                    SCENARIOS_NAME to the subshells."));
 
     // We clone `app` here because `get_matches` consumes it -- but we
     // might still need it to print the short help!
@@ -146,8 +162,11 @@ where
     let command_line: Vec<_> = args.values_of("command_line")
         .ok_or(Error::NoCommandLine)?
         .collect();
-    let command_line = consumers::CommandLine::new(command_line)
+    let mut command_line = consumers::CommandLine::new(command_line)
         .ok_or(Error::NoCommandLine)?;
+    command_line.ignore_env = args.is_present("ignore_env");
+    command_line.insert_name_in_args = !args.is_present("no_insert_name");
+    command_line.add_scenarios_name = !args.is_present("no_name_variable");
     for scenario in scenarios {
         command_line.execute(&scenario?)?;
     }
@@ -284,7 +303,8 @@ each combination of scenarios. This may be parallelized by \
 passing the --jobs option.
 
 When running, scenarios adds an additional variable \
-SCENARIOS_NAME to each scenario. This variable contains the \
+SCENARIOS_NAME to each scenario (unless --no-name-variable is passed). \
+This variable contains the \
 name of the current combination of scenarios. Strict mode \
 will prevent you from defining SCENARIOS_NAME yourself. \
 With the --lax option, your own definition will silently be \
