@@ -37,8 +37,9 @@ fn main() {
              .long("delimiter")
              .takes_value(true)
              .default_value(", ")
+             .hide_default_value(true)
              .help("A delimiter to use when merging the names of a \
-                    scenario combination."))
+                    scenario combination. [default: ', ']"))
         // Strict mode control.
         .arg(Arg::with_name("strict")
              .short("s")
@@ -59,7 +60,7 @@ fn main() {
              .multiple(true)
              .help("Input scenario files. If multiple files are \
                     passed, all possible combinations between them \
-                    are used. Pass \"-\" to read from stdin. You may \
+                    are used. Pass '-' to read from stdin. You may \
                     pass this option more than once."))
         // Output control.
         .arg(Arg::with_name("command_line")
