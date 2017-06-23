@@ -1,7 +1,6 @@
 
-use std::io;
 use std::ffi::OsStr;
-use std::process::{Command, Child, ExitStatus, Output};
+use std::process::Command;
 
 use scenarios::Scenario;
 use super::Printer;
@@ -100,55 +99,24 @@ where
         (program, args)
     }
 
-    /// Spawn a new process from the command line and a given scenario.
-    pub fn spawn(&self, scenario: &Scenario) -> io::Result<Child> {
-        self.create_command(scenario.variables().into_iter(), scenario.name())
-            .spawn()
+    /// Prepare an `std::process::Command` from this command line.
+    ///
+    /// The returned `Command` can be used to spawn a child process.
+    pub fn with_scenario(&self, scenario: &Scenario) -> Command {
+        self.create_command(scenario.variables(), scenario.name())
     }
 
-    /// Executes the command line in the given scenario.
-    pub fn execute(&self, scenario: &Scenario) -> io::Result<ExitStatus> {
-        self.execute_status(scenario.variables(), scenario.name())
-    }
-
-    /// Executes the command line and returns its exit status.
+    /// Creates an `std::process::Command` corresponding to this line.
     ///
     /// The parameter `env_vars` should be set to the environment
     /// variables to add before executing the command. The parameter
     /// `name` is the name of the scenario to execute.
-    pub fn execute_status<I, K, V, N>(&self, env_vars: I, name: N) -> io::Result<ExitStatus>
+    pub fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Command
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
         N: AsRef<str> + AsRef<OsStr>,
-    {
-        self.create_command(env_vars.into_iter(), name.as_ref())
-            .status()
-    }
-
-    /// Executes the command line and collect its output.
-    ///
-    /// The parameter `env_vars` should be set to the environment
-    /// variables to add before executing the command. The parameter
-    /// `name` is the name of the scenario to execute.
-    pub fn execute_output<I, K, V, N>(&self, env_vars: I, name: N) -> io::Result<Output>
-    where
-        I: IntoIterator<Item = (K, V)>,
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
-        N: AsRef<str> + AsRef<OsStr>,
-    {
-        self.create_command(env_vars.into_iter(), name.as_ref())
-            .output()
-    }
-
-    /// Implementation of `execute_status()` and `execute_output()`.
-    fn create_command<I, K, V>(&self, env_vars: I, name: &str) -> Command
-    where
-        I: Iterator<Item = (K, V)>,
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
     {
         let (program, args) = self.program_args();
         let mut cmd = Command::new(program);
@@ -159,7 +127,7 @@ where
             let mut printer = Printer::new().with_terminator("");
             for arg in args {
                 printer.set_template(arg);
-                cmd.arg(printer.format(name));
+                cmd.arg(printer.format(name.as_ref()));
             }
         } else {
             cmd.args(args);
@@ -187,7 +155,9 @@ mod tests {
     fn test_echo() {
         let cl = CommandLine::new(["echo", "-n"]).unwrap();
         let env: &[(&str, &str)] = &[];
-        cl.execute_status(env.into_iter().cloned(), "").unwrap();
+        cl.create_command(env.into_iter().cloned(), "")
+            .status()
+            .unwrap();
     }
 
     #[test]
@@ -195,7 +165,8 @@ mod tests {
         let mut cl = CommandLine::new(["echo", "a cool {}!"]).unwrap();
         cl.insert_name_in_args = true;
         let env: &[(&str, &str)] = &[];
-        let output = cl.execute_output(env.into_iter().cloned(), "name")
+        let output = cl.create_command(env.into_iter().cloned(), "name")
+            .output()
             .unwrap();
         let output = String::from_utf8(output.stdout).unwrap();
         assert_eq!(output, "a cool name!\n".to_owned());

@@ -170,7 +170,7 @@ where
     command_line.insert_name_in_args = !args.is_present("no_insert_name");
     command_line.add_scenarios_name = !args.is_present("no_name_variable");
     for scenario in scenarios {
-        command_line.execute(&scenario?)?;
+        command_line.with_scenario(&scenario?).status()?;
     }
     Ok(())
 }
