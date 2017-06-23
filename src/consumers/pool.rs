@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 
 use num_cpus;
 
+use intoresult::{CommandFailed, IntoResult};
 
 /// Type that specifies how many jobs should run in parallel.
 ///
@@ -26,27 +27,6 @@ impl From<usize> for JobCount {
     /// Converts from `int`, replacing `0` with the number of cores.
     fn from(n: usize) -> Self {
         JobCount(if n > 0 { n } else { num_cpus::get() })
-    }
-}
-
-
-/// Extension trait that is used to patch `ExitStatus`.
-trait IntoResult<T, E> {
-    /// Converts `self` into a given result type.
-    fn into_result(self) -> Result<T, E>;
-}
-
-impl IntoResult<(), Error> for ExitStatus {
-    /// Converts an `ExitStatus` into a `Result`.
-    ///
-    /// If the status indicates success, `Ok(())`` is returned.
-    /// Otherwise, `Err(Error::CommandFailed)` is returned.
-    fn into_result(self) -> Result<(), Error> {
-        if self.success() {
-            Ok(())
-        } else {
-            Err(Error::CommandFailed(self))
-        }
     }
 }
 
@@ -110,7 +90,7 @@ impl Pool {
                 .into_result();
         }
         self.queue.push_back(command.spawn()?);
-        result
+        result.map_err(From::from)
     }
 
     /// Waits for all processes left in the queue to finish.
@@ -128,7 +108,11 @@ impl Pool {
         let mut total_result = Ok(());
         for mut job in self.queue.drain(..) {
             let current_result = job.wait();
-            total_result = total_result.and_then(|_| current_result?.into_result());
+            total_result = total_result.and_then(|_|
+                current_result?
+                    .into_result()
+                    .map_err(From::from)
+            );
         }
         total_result
     }
@@ -201,7 +185,7 @@ impl Drop for Pool {
 #[derive(Debug)]
 pub enum Error {
     /// A process finished unsuccessfully.
-    CommandFailed(ExitStatus),
+    CommandFailed(CommandFailed),
     /// An IO error occurred while waiting on a process.
     IoError(io::Error),
 }
@@ -209,7 +193,7 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::CommandFailed(ref code) => write!(f, "{}: {}", self.description(), code),
+            Error::CommandFailed(ref err) => err.fmt(f),
             Error::IoError(ref err) => err.fmt(f),
         }
     }
@@ -218,14 +202,14 @@ impl Display for Error {
 impl StdError for Error {
     fn description(&self) -> &str {
         match *self {
-            Error::CommandFailed(_) => "command returned non-zero exit code",
+            Error::CommandFailed(ref err) => err.description(),
             Error::IoError(ref err) => err.description(),
         }
     }
 
     fn cause(&self) -> Option<&StdError> {
         match *self {
-            Error::CommandFailed(_) => None,
+            Error::CommandFailed(ref err) => Some(err),
             Error::IoError(ref err) => Some(err),
         }
     }
@@ -234,5 +218,11 @@ impl StdError for Error {
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Self {
         Error::IoError(err)
+    }
+}
+
+impl From<CommandFailed> for Error {
+    fn from(err: CommandFailed) -> Self {
+        Error::CommandFailed(err)
     }
 }

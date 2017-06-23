@@ -10,6 +10,7 @@ extern crate lazy_static;
 mod scenarios;
 mod cartesian;
 mod consumers;
+mod intoresult;
 
 
 use std::io;
