@@ -14,6 +14,7 @@ mod intoresult;
 
 
 use std::io;
+use std::num::ParseIntError;
 use std::fmt::{self, Display};
 use std::error::Error as StdError;
 
@@ -28,6 +29,7 @@ fn main() {
         .author(crate_authors!())
         .about(crate_description!())
         .after_help(LONG_EXPLANATION)
+        .setting(clap::AppSettings::TrailingVarArg)
         .help_message("Print detailed help information.")
         // General args.
         .arg(Arg::with_name("short_help")
@@ -90,6 +92,7 @@ fn main() {
         .arg(Arg::with_name("command_line")
              .takes_value(true)
              .multiple(true)
+             .last(true)
              .help("The command line to execute."))
         .arg(Arg::with_name("ignore_env")
              .short("I")
@@ -106,7 +109,19 @@ fn main() {
              .long("no-name-variable")
              .requires("command_line")
              .help("Do not export the environment variable \
-                    SCENARIOS_NAME to the subshells."));
+                    SCENARIOS_NAME to the subshells."))
+        // Multi-processing.
+        .arg(Arg::with_name("jobs")
+             .short("j")
+             .long("jobs")
+             .requires("command_line")
+             .takes_value(true)
+             .min_values(0)
+             .max_values(1)
+             .validator(|s| if s.parse::<usize>().is_ok() { Ok(()) } else { Err(s) })
+            .help("The number of scenarios to execute in parallel. \
+                   If no number is passed, the number of CPUs on \
+                   this machine is used."));
 
     // We clone `app` here because `get_matches` consumes it -- but we
     // might still need it to print the short help!
@@ -162,6 +177,7 @@ fn handle_command_line<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Resu
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
+    // Configure the command line.
     let command_line: Vec<_> = args.values_of("command_line")
         .ok_or(Error::NoCommandLine)?
         .collect();
@@ -170,9 +186,21 @@ where
     command_line.ignore_env = args.is_present("ignore_env");
     command_line.insert_name_in_args = !args.is_present("no_insert_name");
     command_line.add_scenarios_name = !args.is_present("no_name_variable");
+
+    let num_jobs = if let Some(num_jobs) = args.value_of("jobs") {
+        num_jobs.parse()?
+    } else if args.is_present("jobs") {
+        0
+    } else {
+        1
+    };
+    let mut pool = consumers::CommandPool::new(num_jobs);
+
     for scenario in scenarios {
-        command_line.with_scenario(&scenario?).status()?;
+        let command = command_line.with_scenario(&scenario?);
+        pool.add(command)?;
     }
+    pool.join()?;
     Ok(())
 }
 
@@ -200,6 +228,7 @@ enum Error {
     FileParseError(scenarios::FileParseError),
     ScenarioError(scenarios::ScenarioError),
     PoolError(consumers::PoolError),
+    ParseIntError(ParseIntError),
     NoScenarios,
     NoCommandLine,
 }
@@ -210,6 +239,7 @@ impl Display for Error {
             Error::IoError(ref err) => err.fmt(f),
             Error::FileParseError(ref err) => err.fmt(f),
             Error::ScenarioError(ref err) => err.fmt(f),
+            Error::ParseIntError(ref err) => err.fmt(f),
             Error::PoolError(ref err) => err.fmt(f),
             _ => write!(f, "{}", self.description()),
         }
@@ -223,6 +253,7 @@ impl StdError for Error {
             Error::FileParseError(ref err) => err.description(),
             Error::ScenarioError(ref err) => err.description(),
             Error::PoolError(ref err) => err.description(),
+            Error::ParseIntError(ref err) => err.description(),
             Error::NoScenarios => "no scenarios provided",
             Error::NoCommandLine => "no command line provided",
         }
@@ -234,6 +265,7 @@ impl StdError for Error {
             Error::FileParseError(ref err) => Some(err),
             Error::ScenarioError(ref err) => Some(err),
             Error::PoolError(ref err) => Some(err),
+            Error::ParseIntError(ref err) => Some(err),
             _ => None,
         }
     }
@@ -269,6 +301,12 @@ impl From<scenarios::MergeError> for Error {
 impl From<consumers::PoolError> for Error {
     fn from(err: consumers::PoolError) -> Self {
         Error::PoolError(err)
+    }
+}
+
+impl From<ParseIntError> for Error {
+    fn from(err: ParseIntError) -> Self {
+        Error::ParseIntError(err)
     }
 }
 

@@ -108,11 +108,8 @@ impl Pool {
         let mut total_result = Ok(());
         for mut job in self.queue.drain(..) {
             let current_result = job.wait();
-            total_result = total_result.and_then(|_|
-                current_result?
-                    .into_result()
-                    .map_err(From::from)
-            );
+            total_result =
+                total_result.and_then(|_| current_result?.into_result().map_err(From::from));
         }
         total_result
     }
