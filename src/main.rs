@@ -196,11 +196,15 @@ where
     };
     let mut pool = consumers::CommandPool::new(num_jobs);
 
+    let mut result = Ok(());
     for scenario in scenarios {
         let command = command_line.with_scenario(&scenario?);
-        pool.add(command)?;
+        result = result.and(pool.add(command));
+        if result.is_err() {
+            break;
+        }
     }
-    pool.join()?;
+    result.and(pool.join())?;
     Ok(())
 }
 
