@@ -1,7 +1,7 @@
 
 use std::io;
 use std::error::Error as StdError;
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, Command};
 use std::fmt::{self, Display};
 use std::collections::VecDeque;
 
@@ -64,33 +64,33 @@ impl Pool {
 
     /// Adds a new process to the pool.
     ///
-    /// If the pool is full, this call blocks until a child process
-    /// is finished. Then, the a new child process executing `command`
-    /// is spawned and added to the pool.
+    /// If the pool is full, this call fails and returns the passed
+    /// `command`. If the pool is not full, a new child process is
+    /// spawned from the `command` and added to the pool.
     ///
     /// # Errors
-    /// If the pool is not full, this call does not block and always
-    /// succeeds.
+    /// If the pool is full, the passed `command` is returned, wrapped
+    /// in a `PoolAddResult::PoolFull`.
     ///
-    /// If a waited-on process fails, this call fails with
-    /// `Error::CommandFailed`. A waited-on process fails e.g. by
-    /// returning a non-zero exit status or by aborting through a
-    /// signal. The passed `command` gets spawned anyway.
+    /// If the pool is not full and spawning the child process fails,
+    /// `PoolAddResult::CommandSpawned(Err(error))` is returned. The
+    /// pool is not modified in this case.
     ///
-    /// If an `std::io::Error` occurs, it is retuned. The passed
-    /// `Command` is *not* added in this case.
-    pub fn add(&mut self, mut command: Command) -> Result<(), Error> {
-        let mut result = Ok(());
-        // If the queue is full, block until one job is finished.
-        if self.queue.len() == self.num_jobs.get() {
-            // Abort the function if `find_finished()` fails.
-            // But keep the `result` if the child process failed.
-            result = self.remove_finished()?
-                .expect("queue empty")
-                .into_result();
+    /// If spawning the child process, succeeds,
+    /// `PoolAddResult::CommandSpawned(Ok(()))` is returned.
+    pub fn add(&mut self, mut command: Command) -> PoolAddResult {
+        if self.queue.len() < self.num_jobs.get() {
+            let result = match command.spawn() {
+                Ok(process) => {
+                    self.queue.push_back(process);
+                    Ok(())
+                },
+                Err(err) => Err(err),
+            };
+            PoolAddResult::CommandSpawned(result)
+        } else {
+            PoolAddResult::PoolFull(command)
         }
-        self.queue.push_back(command.spawn()?);
-        result.map_err(From::from)
     }
 
     /// Waits for all processes left in the queue to finish.
@@ -117,28 +117,29 @@ impl Pool {
     ///
     /// This sequentially tries to wait for all queued processes. If
     /// a process turns out to have finished, it is immediately removed
-    /// from the queue and its `ExitStatus` is returned.
-    ///
-    /// If all processes are still running, `Ok(None)` is returned.
+    /// from the queue.
     ///
     /// # Errors
     /// This call fails if waiting on any process fails. The failing
-    /// process may or may not be left in the queue.
-    pub fn remove_finished(&mut self) -> io::Result<Option<ExitStatus>> {
+    /// process may or may not be left in the queue. If the removed
+    /// command failed, this call fails with `Error::CommandFailed`.
+    pub fn remove_finished(&mut self) -> Result<(), Error> {
         if self.queue.is_empty() {
-            return Ok(None);
+            return Ok(());
         }
         let index;
         loop {
             if let Some(i) = self.position_of_finished()? {
-                index = i
+                index = i;
+                break;
             }
         }
         self.queue
             .remove(index)
             .expect("index returned by `find_finished` invalid")
-            .wait()
-            .map(Option::from)
+            .wait()?
+            .into_result()?;
+        Ok(())
     }
 
     /// Finds the first finished child process in the queue.
@@ -174,6 +175,28 @@ impl Drop for Pool {
     fn drop(&mut self) {
         if !self.queue.is_empty() {
             panic!("dropping a non-empty process pool");
+        }
+    }
+}
+
+
+/// Result-like type returned by `Pool::add()`.
+pub enum PoolAddResult {
+    /// The command could not be spawned because the pool is full.
+    PoolFull(Command),
+    /// The command was spawned, maybe even successfully.
+    CommandSpawned(io::Result<()>),
+}
+
+impl PoolAddResult {
+    /// Expects that the result of `Pool::add()` was `CommandSpawned`.
+    ///
+    /// This panics with a custom message if the command was not
+    /// spawned.
+    pub fn expect_spawned(self, err_msg: &'static str) -> io::Result<()> {
+        match self {
+            PoolAddResult::CommandSpawned(result) => result,
+            PoolAddResult::PoolFull(_) => panic!(err_msg),
         }
     }
 }

@@ -177,6 +177,8 @@ fn handle_command_line<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Resu
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
+    use consumers::{CommandPool, PoolAddResult, PoolError};
+
     // Configure the command line.
     let command_line: Vec<_> = args.values_of("command_line")
         .ok_or(Error::NoCommandLine)?
@@ -194,16 +196,60 @@ where
     } else {
         1
     };
-    let mut pool = consumers::CommandPool::new(num_jobs);
+    let mut pool = CommandPool::new(num_jobs);
+    let keep_going = args.is_present("keep_going");
 
+    // The general concept of this loop is:
+    //
+    // ```
+    // let mut result = Ok(())
+    // loop {
+    //     let this_result = something();
+    //     result = result.and(this_result);
+    //     if result.is_err() {
+    //         break;
+    //     }
+    // }
+    // ```
     let mut result = Ok(());
     for scenario in scenarios {
         let command = command_line.with_scenario(&scenario?);
-        result = result.and(pool.add(command));
-        if result.is_err() {
+        // The result of this iteration is determined by a nasty match.
+        let this_result = match pool.add(command) {
+            // If we can immediately add the process to the pool, the
+            // result of this iteration, is the result of this.
+            PoolAddResult::CommandSpawned(spawn_result) => spawn_result.map_err(PoolError::from),
+            // Otherwise, we have to do some more complicated stuff.
+            PoolAddResult::PoolFull(command) => {
+                // We try to clear out the pool.
+                let last_result = pool.remove_finished();
+                // If that fails and we don't want to keep going, we
+                // fail. If we want to keep going, the failure is noted
+                // as `last_result`.
+                if last_result.is_err() && !keep_going {
+                    last_result
+                } else {
+                    // If the last command succeeded or we keep going,
+                    // add the next process to the pool. The pool must
+                    // have enough space now. If adding the process
+                    // fails, this iteration fails. If it succeeds, the
+                    // result of this iteration depends on whether the
+                    // `last_result` was `ok` or not.
+                    pool.add(command)
+                        .expect_spawned("pool full after clearing")
+                        .map_err(PoolError::from)
+                        .and(last_result)
+                }
+            },
+        };
+        // The over-all result is updated from the result of this
+        // iteration. If we need to bail out, we do so.
+        result = result.and(this_result);
+        if result.is_err() && !keep_going {
             break;
         }
     }
+    // Take into account all remaining processes.
     result.and(pool.join())?;
     Ok(())
 }
