@@ -105,13 +105,12 @@ impl Pool {
     ///
     /// Even if the call fails, all processes are waited on.
     pub fn join(&mut self) -> Result<(), Error> {
-        let mut total_result = Ok(());
+        let mut result = Ok(());
         for mut job in self.queue.drain(..) {
-            let current_result = job.wait();
-            total_result =
-                total_result.and_then(|_| current_result?.into_result().map_err(From::from));
+            let this_result = job.wait();
+            result = result.and_then(|_| this_result?.into_result().map_err(Error::from));
         }
-        total_result
+        result
     }
 
     /// Finds the first finished child process in the queue.
@@ -125,20 +124,21 @@ impl Pool {
     /// # Errors
     /// This call fails if waiting on any process fails. The failing
     /// process may or may not be left in the queue.
-    fn remove_finished(&mut self) -> io::Result<Option<ExitStatus>> {
+    pub fn remove_finished(&mut self) -> io::Result<Option<ExitStatus>> {
         if self.queue.is_empty() {
             return Ok(None);
         }
+        let index;
         loop {
-            let maybe_index = self.position_of_finished()?;
-            if let Some(index) = maybe_index {
-                return self.queue
-                           .remove(index)
-                           .expect("index returned by `find_finished` invalid")
-                           .wait()
-                           .map(|status| Some(status));
+            if let Some(i) = self.position_of_finished()? {
+                index = i
             }
         }
+        self.queue
+            .remove(index)
+            .expect("index returned by `find_finished` invalid")
+            .wait()
+            .map(Option::from)
     }
 
     /// Finds the first finished child process in the queue.
