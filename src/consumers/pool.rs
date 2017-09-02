@@ -1,13 +1,12 @@
 
 use std::io;
-use std::error::Error as StdError;
-use std::process::{Child, Command};
-use std::fmt::{self, Display};
+use std::process::{Child, Command, ExitStatus};
 use std::collections::VecDeque;
+use std::thread;
+use std::time;
 
 use num_cpus;
 
-use intoresult::{CommandFailed, IntoResult};
 
 /// Type that specifies how many jobs should run in parallel.
 ///
@@ -78,7 +77,7 @@ impl Pool {
     ///
     /// If spawning the child process, succeeds,
     /// `PoolAddResult::CommandSpawned(Ok(()))` is returned.
-    pub fn add(&mut self, mut command: Command) -> PoolAddResult {
+    pub fn try_push(&mut self, mut command: Command) -> PoolAddResult {
         if self.queue.len() < self.num_jobs.get() {
             let result = match command.spawn() {
                 Ok(process) => {
@@ -93,6 +92,42 @@ impl Pool {
         }
     }
 
+    /// Like `try_push`, but may also pop a process from the pool.
+    ///
+    /// As long as the pool's queue is not full, this method works
+    /// exactly like `try_push`.
+    ///
+    /// If the queue is full, this method waits for a queued process to
+    /// finish. Then, the new process is added to the pool and the old
+    /// process's exit status is returned.
+    ///
+    /// # Errors
+    /// This method fails if either of the internal calls to `try_push`
+    /// or `pop_finished` fails. Contrary to `try_push`, this function
+    /// never returns the passed `Command`. Hence, if any error occurs,
+    /// `command` is lost.
+    pub fn pop_push(&mut self, command: Command) -> io::Result<Option<ExitStatus>> {
+        match self.try_push(command) {
+            // If we can immediately add the process to the pool, we
+            // return `Ok(None)` except any io::Error occurs.
+            PoolAddResult::CommandSpawned(spawn_result) => spawn_result.map(|_| None),
+            // If the pool is full, we have to clear it first.
+            PoolAddResult::PoolFull(command) => {
+                // We try to clear out the pool. If that fails, we
+                // discard the command and return the error. Because
+                // the pool is full, `pop_finished()` cannot return
+                // `None`.
+                let exit_status = self.pop_finished().expect("no process in full pool")?;
+                // Here, we know that the pool has space again, so
+                // adding a new command must succeed, except any
+                // `io::Error` occurs.
+                self.try_push(command)
+                    .expect_spawned("pool full after pop")
+                    .map(|_| Some(exit_status))
+            },
+        }
+    }
+
     /// Waits for all processes left in the queue to finish.
     ///
     /// # Errors
@@ -104,42 +139,48 @@ impl Pool {
     /// signal.
     ///
     /// Even if the call fails, all processes are waited on.
-    pub fn join(&mut self) -> Result<(), Error> {
-        let mut result = Ok(());
-        for mut job in self.queue.drain(..) {
-            let this_result = job.wait();
-            result = result.and_then(|_| this_result?.into_result().map_err(Error::from));
-        }
-        result
+    pub fn join(&mut self) -> io::Result<Vec<ExitStatus>> {
+        self.queue
+            .drain(..)
+            .map(|mut job| job.wait())
+            .collect()
     }
 
     /// Finds the first finished child process in the queue.
     ///
-    /// This sequentially tries to wait for all queued processes. If
-    /// a process turns out to have finished, it is immediately removed
-    /// from the queue.
+    /// If the queue is empty, this method just returns `None`.
+    ///
+    /// Otherwise, this method sequentially tries to wait for all
+    /// queued processes. Once a process has finished, it is
+    /// removed from the queue and its exit status is returned.
     ///
     /// # Errors
-    /// This call fails if waiting on any process fails. The failing
-    /// process may or may not be left in the queue. If the removed
-    /// command failed, this call fails with `Error::CommandFailed`.
-    pub fn remove_finished(&mut self) -> Result<(), Error> {
+    /// This call returns `Some(Err(error))` if waiting on any process
+    /// fails. The failing process may or may not be left in the queue.
+    pub fn pop_finished(&mut self) -> Option<io::Result<ExitStatus>> {
         if self.queue.is_empty() {
-            return Ok(());
+            return None;
         }
         let index;
         loop {
-            if let Some(i) = self.position_of_finished()? {
-                index = i;
-                break;
+            match self.find_first_finished() {
+                Ok(Some(i)) => {
+                    index = i;
+                    break;
+                },
+                Ok(None) => {
+                    thread::sleep(time::Duration::from_millis(10));
+                },
+                Err(err) => {
+                    return Some(Err(err));
+                },
             }
         }
         self.queue
             .remove(index)
             .expect("index returned by `find_finished` invalid")
-            .wait()?
-            .into_result()?;
-        Ok(())
+            .wait()
+            .into()
     }
 
     /// Finds the first finished child process in the queue.
@@ -152,7 +193,7 @@ impl Pool {
     ///
     /// # Errors
     /// This call fails if any call to `try_wait()` fails.
-    fn position_of_finished(&mut self) -> io::Result<Option<usize>> {
+    fn find_first_finished(&mut self) -> io::Result<Option<usize>> {
         for (i, job) in self.queue.iter_mut().enumerate() {
             // Return on error or if `job` is finished.
             if job.try_wait()?.is_some() {
@@ -196,53 +237,7 @@ impl PoolAddResult {
     pub fn expect_spawned(self, err_msg: &'static str) -> io::Result<()> {
         match self {
             PoolAddResult::CommandSpawned(result) => result,
-            PoolAddResult::PoolFull(_) => panic!(err_msg),
+            _ => panic!(err_msg),
         }
-    }
-}
-
-/// Error type returned by `Pool`'s methods.
-#[derive(Debug)]
-pub enum Error {
-    /// A process finished unsuccessfully.
-    CommandFailed(CommandFailed),
-    /// An IO error occurred while waiting on a process.
-    IoError(io::Error),
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::CommandFailed(ref err) => err.fmt(f),
-            Error::IoError(ref err) => err.fmt(f),
-        }
-    }
-}
-
-impl StdError for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::CommandFailed(ref err) => err.description(),
-            Error::IoError(ref err) => err.description(),
-        }
-    }
-
-    fn cause(&self) -> Option<&StdError> {
-        match *self {
-            Error::CommandFailed(ref err) => Some(err),
-            Error::IoError(ref err) => Some(err),
-        }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::IoError(err)
-    }
-}
-
-impl From<CommandFailed> for Error {
-    fn from(err: CommandFailed) -> Self {
-        Error::CommandFailed(err)
     }
 }

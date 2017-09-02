@@ -21,6 +21,7 @@ use std::error::Error as StdError;
 use clap::{Arg, ArgGroup, App};
 
 use scenarios::Scenario;
+use intoresult::{CommandFailed, IntoResult};
 
 
 fn main() {
@@ -177,7 +178,7 @@ fn handle_command_line<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Resu
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
-    use consumers::{CommandPool, PoolAddResult, PoolError};
+    use consumers::CommandPool;
 
     // Configure the command line.
     let command_line: Vec<_> = args.values_of("command_line")
@@ -199,59 +200,48 @@ where
     let mut pool = CommandPool::new(num_jobs);
     let keep_going = args.is_present("keep_going");
 
-    // The general concept of this loop is:
-    //
-    // ```
-    // let mut result = Ok(())
-    // loop {
-    //     let this_result = something();
-    //     result = result.and(this_result);
-    //     if result.is_err() {
-    //         break;
-    //     }
-    // }
-    // ```
-    let mut result = Ok(());
+    // Iterate over all scenarios. Because `pool` panicks if we drop it
+    // while it's still full, we must be diligent to let no result
+    // escape.
+    // TODO: This will be much easier once `catch_expr` lands.
+    let mut last_error = Ok(());
     for scenario in scenarios {
-        let command = command_line.with_scenario(&scenario?);
-        // The result of this iteration is determined by a nasty match.
-        let this_result = match pool.add(command) {
-            // If we can immediately add the process to the pool, the
-            // result of this iteration, is the result of this.
-            PoolAddResult::CommandSpawned(spawn_result) => spawn_result.map_err(PoolError::from),
-            // Otherwise, we have to do some more complicated stuff.
-            PoolAddResult::PoolFull(command) => {
-                // We try to clear out the pool.
-                let last_result = pool.remove_finished();
-                // If that fails and we don't want to keep going, we
-                // fail. If we want to keep going, the failure is noted
-                // as `last_result`.
-                if last_result.is_err() && !keep_going {
-                    last_result
-                } else {
-                    // If the last command succeeded or we keep going,
-                    // add the next process to the pool. The pool must
-                    // have enough space now. If adding the process
-                    // fails, this iteration fails. If it succeeds, the
-                    // result of this iteration depends on whether the
-                    // `last_result` was `ok` or not.
-                    pool.add(command)
-                        .expect_spawned("pool full after clearing")
-                        .map_err(PoolError::from)
-                        .and(last_result)
-                }
+        let scenario = match scenario {
+            Ok(scenario) => scenario,
+            Err(err) => {
+                last_error = Err(err.into());
+                break;
             },
         };
-        // The over-all result is updated from the result of this
-        // iteration. If we need to bail out, we do so.
-        result = result.and(this_result);
-        if result.is_err() && !keep_going {
-            break;
+        let command = command_line.with_scenario(&scenario);
+        match pool.pop_push(command) {
+            Err(err) => {
+                last_error = Err(err.into());
+                break;
+            },
+            Ok(Some(exit_status)) if !(exit_status.success() || keep_going) => {
+                last_error = exit_status.into_result().map_err(Error::from);
+                break;
+            },
+            _ => {},
         }
     }
-    // Take into account all remaining processes.
-    result.and(pool.join())?;
-    Ok(())
+    // Take into account all remaining processes. Ignore all
+    // `CommandFailed` errors if we keep going.
+    match pool.join() {
+        Err(err) => {
+            last_error = Err(err.into());
+        },
+        Ok(exit_statuses) => {
+            for exit_status in exit_statuses.into_iter() {
+                if let Err(err) = exit_status.into_result() {
+                    last_error = Err(err.into());
+                    break;
+                }
+            }
+        },
+    }
+    last_error
 }
 
 fn handle_printing<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Result<(), Error>
@@ -277,7 +267,7 @@ enum Error {
     IoError(io::Error),
     FileParseError(scenarios::FileParseError),
     ScenarioError(scenarios::ScenarioError),
-    PoolError(consumers::PoolError),
+    CommandFailed(CommandFailed),
     ParseIntError(ParseIntError),
     NoScenarios,
     NoCommandLine,
@@ -290,7 +280,7 @@ impl Display for Error {
             Error::FileParseError(ref err) => err.fmt(f),
             Error::ScenarioError(ref err) => err.fmt(f),
             Error::ParseIntError(ref err) => err.fmt(f),
-            Error::PoolError(ref err) => err.fmt(f),
+            Error::CommandFailed(ref err) => err.fmt(f),
             _ => write!(f, "{}", self.description()),
         }
     }
@@ -302,7 +292,7 @@ impl StdError for Error {
             Error::IoError(ref err) => err.description(),
             Error::FileParseError(ref err) => err.description(),
             Error::ScenarioError(ref err) => err.description(),
-            Error::PoolError(ref err) => err.description(),
+            Error::CommandFailed(ref err) => err.description(),
             Error::ParseIntError(ref err) => err.description(),
             Error::NoScenarios => "no scenarios provided",
             Error::NoCommandLine => "no command line provided",
@@ -314,7 +304,7 @@ impl StdError for Error {
             Error::IoError(ref err) => Some(err),
             Error::FileParseError(ref err) => Some(err),
             Error::ScenarioError(ref err) => Some(err),
-            Error::PoolError(ref err) => Some(err),
+            Error::CommandFailed(ref err) => Some(err),
             Error::ParseIntError(ref err) => Some(err),
             _ => None,
         }
@@ -348,9 +338,9 @@ impl From<scenarios::MergeError> for Error {
     }
 }
 
-impl From<consumers::PoolError> for Error {
-    fn from(err: consumers::PoolError) -> Self {
-        Error::PoolError(err)
+impl From<CommandFailed> for Error {
+    fn from(err: CommandFailed) -> Self {
+        Error::CommandFailed(err)
     }
 }
 

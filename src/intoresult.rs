@@ -3,18 +3,29 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use std::process::ExitStatus;
 
-/// Extension trait that is used to patch `ExitStatus`.
-pub trait IntoResult<T, E> {
+/// Extension trait to patch types with an `into_result` nethod.
+///
+/// This type is used to patch `ExitStatus`.
+pub trait IntoResult {
+    /// The corresponding success type.
+    type Success;
+
+    /// The corresponding error type.
+    type Error;
+
     /// Converts `self` into a given result type.
-    fn into_result(self) -> Result<T, E>;
+    fn into_result(self) -> Result<Self::Success, Self::Error>;
 }
 
-impl IntoResult<(), CommandFailed> for ExitStatus {
+impl IntoResult for ExitStatus {
+    type Success = ();
+    type Error = CommandFailed;
+
     /// Converts an `ExitStatus` into a `Result`.
     ///
     /// If the status indicates success, `Ok(())`` is returned.
     /// Otherwise, `Err(Error::CommandFailed)` is returned.
-    fn into_result(self) -> Result<(), CommandFailed> {
+    fn into_result(self) -> Result<Self::Success, Self::Error> {
         if self.success() {
             Ok(())
         } else {
