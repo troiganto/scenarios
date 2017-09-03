@@ -178,7 +178,7 @@ fn handle_command_line<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Resu
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
-    use consumers::CommandPool;
+    use consumers::PoolAddResult;
 
     // Configure the command line.
     let command_line: Vec<_> = args.values_of("command_line")
@@ -189,59 +189,46 @@ where
     command_line.ignore_env = args.is_present("ignore_env");
     command_line.insert_name_in_args = !args.is_present("no_insert_name");
     command_line.add_scenarios_name = !args.is_present("no_name_variable");
-
-    let num_jobs = if let Some(num_jobs) = args.value_of("jobs") {
-        num_jobs.parse()?
-    } else if args.is_present("jobs") {
-        0
-    } else {
-        1
+    // Configure the pool.
+    let num_jobs = match args.value_of("jobs") {
+        Some(num) => num.parse()?,
+        _ if args.is_present("jobs") => 0,
+        _ => 1,
     };
-    let mut pool = CommandPool::new(num_jobs);
+    let mut pool = consumers::CommandPool::new(num_jobs);
     let keep_going = args.is_present("keep_going");
-
     // Iterate over all scenarios. Because `pool` panicks if we drop it
-    // while it's still full, we must be diligent to let no result
-    // escape.
-    // TODO: This will be much easier once `catch_expr` lands.
-    let mut last_error = Ok(());
-    for scenario in scenarios {
-        let scenario = match scenario {
-            Ok(scenario) => scenario,
-            Err(err) => {
-                last_error = Err(err.into());
-                break;
-            },
-        };
-        let command = command_line.with_scenario(&scenario);
-        match pool.pop_push(command) {
-            Err(err) => {
-                last_error = Err(err.into());
-                break;
-            },
-            Ok(Some(exit_status)) if !(exit_status.success() || keep_going) => {
-                last_error = exit_status.into_result().map_err(Error::from);
-                break;
-            },
-            _ => {},
-        }
-    }
-    // Take into account all remaining processes. Ignore all
-    // `CommandFailed` errors if we keep going.
-    match pool.join() {
-        Err(err) => {
-            last_error = Err(err.into());
-        },
-        Ok(exit_statuses) => {
-            for exit_status in exit_statuses.into_iter() {
-                if let Err(err) = exit_status.into_result() {
-                    last_error = Err(err.into());
-                    break;
+    // while it's still full, we use an anonymous function to let no
+    // result escape. TODO: Wait for `catch_expr`.
+    let run_result = (|| {
+        for scenario in scenarios {
+            // If the pool is full, we clear it out.
+            if let Some(exit_status) = pool.pop_finished_if_full()? {
+                // Abort if there is an error and we don't ignore it.
+                if !keep_going {
+                    exit_status.into_result()?;
                 }
             }
-        },
+            // Now the pool definitely has space and we can push the
+            // new command.
+            let command = command_line.with_scenario(&scenario?);
+            match pool.try_push(command) {
+                PoolAddResult::CommandSpawned(result) => result?,
+                PoolAddResult::PoolFull(_) => panic!("pool full despite emptying"),
+            };
+        }
+        Ok(())
+    })();
+    let exit_statuses = run_result.and(pool.join().map_err(Error::from))?;
+    // Here, the pool is empty. If we don't ignore erroring children,
+    // we check each of them and fail on the first error.
+    if !keep_going {
+        exit_statuses
+            .into_iter()
+            .map(IntoResult::into_result)
+            .collect::<Result<Vec<()>, _>>()?;
     }
-    last_error
+    Ok(())
 }
 
 fn handle_printing<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Result<(), Error>

@@ -61,6 +61,14 @@ impl Pool {
         }
     }
 
+    /// Returns `true` if the pool is full.
+    ///
+    /// If this function returns `true`, the next call to `try_push`
+    /// will return `PoolAddResult::PoolFull`.
+    pub fn is_full(&self) -> bool {
+        self.queue.len() >= self.num_jobs.get()
+    }
+
     /// Adds a new process to the pool.
     ///
     /// If the pool is full, this call fails and returns the passed
@@ -78,53 +86,13 @@ impl Pool {
     /// If spawning the child process, succeeds,
     /// `PoolAddResult::CommandSpawned(Ok(()))` is returned.
     pub fn try_push(&mut self, mut command: Command) -> PoolAddResult {
-        if self.queue.len() < self.num_jobs.get() {
-            let result = match command.spawn() {
-                Ok(process) => {
-                    self.queue.push_back(process);
-                    Ok(())
-                },
-                Err(err) => Err(err),
-            };
-            PoolAddResult::CommandSpawned(result)
-        } else {
+        if self.is_full() {
             PoolAddResult::PoolFull(command)
-        }
-    }
-
-    /// Like `try_push`, but may also pop a process from the pool.
-    ///
-    /// As long as the pool's queue is not full, this method works
-    /// exactly like `try_push`.
-    ///
-    /// If the queue is full, this method waits for a queued process to
-    /// finish. Then, the new process is added to the pool and the old
-    /// process's exit status is returned.
-    ///
-    /// # Errors
-    /// This method fails if either of the internal calls to `try_push`
-    /// or `pop_finished` fails. Contrary to `try_push`, this function
-    /// never returns the passed `Command`. Hence, if any error occurs,
-    /// `command` is lost.
-    pub fn pop_push(&mut self, command: Command) -> io::Result<Option<ExitStatus>> {
-        match self.try_push(command) {
-            // If we can immediately add the process to the pool, we
-            // return `Ok(None)` except any io::Error occurs.
-            PoolAddResult::CommandSpawned(spawn_result) => spawn_result.map(|_| None),
-            // If the pool is full, we have to clear it first.
-            PoolAddResult::PoolFull(command) => {
-                // We try to clear out the pool. If that fails, we
-                // discard the command and return the error. Because
-                // the pool is full, `pop_finished()` cannot return
-                // `None`.
-                let exit_status = self.pop_finished().expect("no process in full pool")?;
-                // Here, we know that the pool has space again, so
-                // adding a new command must succeed, except any
-                // `io::Error` occurs.
-                self.try_push(command)
-                    .expect_spawned("pool full after pop")
-                    .map(|_| Some(exit_status))
-            },
+        } else {
+            let result = command
+                .spawn()
+                .map(|process| { self.queue.push_back(process); });
+            PoolAddResult::CommandSpawned(result)
         }
     }
 
@@ -146,6 +114,16 @@ impl Pool {
             .collect()
     }
 
+    /// Like pop_finished(), but returns `None` if the pool is not
+    /// completely full.
+    pub fn pop_finished_if_full(&mut self) -> io::Result<Option<ExitStatus>> {
+        if self.is_full() {
+            self.pop_finished()
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Finds the first finished child process in the queue.
     ///
     /// If the queue is empty, this method just returns `None`.
@@ -157,22 +135,19 @@ impl Pool {
     /// # Errors
     /// This call returns `Some(Err(error))` if waiting on any process
     /// fails. The failing process may or may not be left in the queue.
-    pub fn pop_finished(&mut self) -> Option<io::Result<ExitStatus>> {
+    pub fn pop_finished(&mut self) -> io::Result<Option<ExitStatus>> {
         if self.queue.is_empty() {
-            return None;
+            return Ok(None);
         }
         let index;
         loop {
-            match self.find_first_finished() {
-                Ok(Some(i)) => {
+            match self.find_first_finished()? {
+                Some(i) => {
                     index = i;
                     break;
                 },
-                Ok(None) => {
+                None => {
                     thread::sleep(time::Duration::from_millis(10));
-                },
-                Err(err) => {
-                    return Some(Err(err));
                 },
             }
         }
@@ -180,7 +155,7 @@ impl Pool {
             .remove(index)
             .expect("index returned by `find_finished` invalid")
             .wait()
-            .into()
+            .map(Option::from)
     }
 
     /// Finds the first finished child process in the queue.
