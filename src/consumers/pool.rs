@@ -61,6 +61,23 @@ impl Pool {
         }
     }
 
+    /// Creates a pool with a maximum of one job at once.
+    ///
+    /// The call `Pool::new_trivial()` is equivalent to `Pool::new(1)`.
+    /// Such a trivial pool allows no parallelism at all.
+    pub fn new_trivial() -> Self {
+        Pool::new(1)
+    }
+
+    /// Creates a pool with an automatically-detected maximum size.
+    ///
+    /// The call `Pool::new_automatic()` is equivalent to
+    /// `Pool::new(0)`. Such a pool allows as many parallel processes
+    /// there are CPU cores on this machine.
+    pub fn new_automatic() -> Self {
+        Pool::new(0)
+    }
+
     /// Returns `true` if the pool is full.
     ///
     /// If this function returns `true`, the next call to `try_push`
@@ -114,7 +131,7 @@ impl Pool {
             .collect()
     }
 
-    /// Like pop_finished(), but returns `None` if the pool is not
+    /// Like pop_finished(), but returns `Ok(None)` if the pool is not
     /// completely full.
     pub fn pop_finished_if_full(&mut self) -> io::Result<Option<ExitStatus>> {
         if self.is_full() {
@@ -126,15 +143,15 @@ impl Pool {
 
     /// Finds the first finished child process in the queue.
     ///
-    /// If the queue is empty, this method just returns `None`.
+    /// If the queue is empty, this method just returns `Ok(None)`.
     ///
     /// Otherwise, this method sequentially tries to wait for all
     /// queued processes. Once a process has finished, it is
     /// removed from the queue and its exit status is returned.
     ///
     /// # Errors
-    /// This call returns `Some(Err(error))` if waiting on any process
-    /// fails. The failing process may or may not be left in the queue.
+    /// This call returns `Err(error)` if waiting on any process fails.
+    /// The failing process may or may not be left in the queue.
     pub fn pop_finished(&mut self) -> io::Result<Option<ExitStatus>> {
         if self.queue.is_empty() {
             return Ok(None);

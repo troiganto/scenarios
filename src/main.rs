@@ -174,37 +174,28 @@ fn try_main<'a>(args: &clap::ArgMatches<'a>) -> Result<(), Error> {
     }
 }
 
+
 fn handle_command_line<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
-    use consumers::PoolAddResult;
-
-    // Configure the command line.
-    let command_line: Vec<_> = args.values_of("command_line")
-        .ok_or(Error::NoCommandLine)?
-        .collect();
-    let mut command_line = consumers::CommandLine::new(command_line)
-        .ok_or(Error::NoCommandLine)?;
-    command_line.ignore_env = args.is_present("ignore_env");
-    command_line.insert_name_in_args = !args.is_present("no_insert_name");
-    command_line.add_scenarios_name = !args.is_present("no_name_variable");
-    // Configure the pool.
-    let num_jobs = match args.value_of("jobs") {
-        Some(num) => num.parse()?,
-        _ if args.is_present("jobs") => 0,
-        _ => 1,
-    };
-    let mut pool = consumers::CommandPool::new(num_jobs);
+    // Read the arguments.
     let keep_going = args.is_present("keep_going");
+    let command_line = command_line_from_args(args);
+    let mut pool = if let Some(num) = args.value_of("jobs") {
+        consumers::CommandPool::new(num.parse()?)
+    } else if args.is_present("jobs") {
+        consumers::CommandPool::new_automatic()
+    } else {
+        consumers::CommandPool::new_trivial()
+    };
     // Iterate over all scenarios. Because `pool` panicks if we drop it
     // while it's still full, we use an anonymous function to let no
     // result escape. TODO: Wait for `catch_expr`.
     let run_result = (|| {
         for scenario in scenarios {
-            // If the pool is full, we clear it out.
+            // If the pool is full, we free space and check for errors.
             if let Some(exit_status) = pool.pop_finished_if_full()? {
-                // Abort if there is an error and we don't ignore it.
                 if !keep_going {
                     exit_status.into_result()?;
                 }
@@ -212,6 +203,7 @@ where
             // Now the pool definitely has space and we can push the
             // new command.
             let command = command_line.with_scenario(&scenario?);
+            use consumers::PoolAddResult;
             match pool.try_push(command) {
                 PoolAddResult::CommandSpawned(result) => result?,
                 PoolAddResult::PoolFull(_) => panic!("pool full despite emptying"),
@@ -220,8 +212,8 @@ where
         Ok(())
     })();
     let exit_statuses = run_result.and(pool.join().map_err(Error::from))?;
-    // Here, the pool is empty. If we don't ignore erroring children,
-    // we check each of them and fail on the first error.
+    // Here, the pool is empty. If we don't ignore failed child
+    // processes, we check each of them and fail on the first error.
     if !keep_going {
         exit_statuses
             .into_iter()
@@ -230,6 +222,7 @@ where
     }
     Ok(())
 }
+
 
 fn handle_printing<'a, I>(scenarios: I, args: &clap::ArgMatches<'a>) -> Result<(), Error>
 where
@@ -246,6 +239,20 @@ where
         printer.print_scenario(&scenario?);
     }
     Ok(())
+}
+
+
+fn command_line_from_args<'a, I>(args: &clap::ArgMatches<'a>) -> Result<CommandLine, Error> {
+    // Configure the command line.
+    let command_line: Vec<_> = args.values_of("command_line")
+        .ok_or(Error::NoCommandLine)?
+        .collect();
+    let mut command_line = consumers::CommandLine::new(command_line)
+        .ok_or(Error::NoCommandLine)?;
+    command_line.ignore_env = args.is_present("ignore_env");
+    command_line.insert_name_in_args = !args.is_present("no_insert_name");
+    command_line.add_scenarios_name = !args.is_present("no_name_variable");
+    command_line
 }
 
 
