@@ -19,10 +19,11 @@ const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
 ///
 /// `CommandLine` is generic over the backing buffer that contains the
 /// command line. The only condition is that it can be cast via `AsRef`
-/// to a slice of string slices (`&[&str]`).
-pub struct CommandLine<'a, Buffer>
+/// to a slice of string slices (`&[&str]`). By default, a `Vec` is
+/// used.
+pub struct CommandLine<'a, Buffer = Vec<&'a str>>
 where
-    Buffer: 'a + AsRef<[&'a str]>,
+    Buffer: AsRef<[&'a str]>,
 {
     /// The command line containing the program and its arguments.
     command_line: Buffer,
@@ -43,7 +44,7 @@ where
 // FIXME: Improve this interface.
 impl<'a, Buffer> CommandLine<'a, Buffer>
 where
-    Buffer: 'a + AsRef<[&'a str]>,
+    Buffer: AsRef<[&'a str]>,
 {
     /// Creates a new instance wrapping a command line.
     ///

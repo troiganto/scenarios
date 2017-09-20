@@ -244,8 +244,7 @@ where
 }
 
 
-fn command_line_from_args<'a>(args: &clap::ArgMatches<'a>,)
-    -> Result<CommandLine<'a, Vec<&'a str>>, Error> {
+fn command_line_from_args<'a>(args: &'a clap::ArgMatches<'a>) -> Result<CommandLine<'a>, Error> {
     // Configure the command line.
     let command_line: Vec<_> = args.values_of("command_line")
         .ok_or(Error::NoCommandLine)?
