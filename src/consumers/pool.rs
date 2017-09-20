@@ -39,23 +39,24 @@ impl From<usize> for JobCount {
 /// `join()` to wait until they have all finished.
 ///
 /// # Panics
-/// Dropping a `Pool` with some processes still queued causes a panic.
-/// To avoid this, always call `join` before dropping your `Pool`.
-pub struct Pool {
+/// Dropping a `ProcessPool` with some processes still queued causes a
+/// panic. To avoid this, always call `join` before dropping your
+/// `ProcessPool`.
+pub struct ProcessPool {
     /// The maximum number of concurrent processes.
     pub num_jobs: JobCount,
     /// The internal queue of added processes.
     queue: VecDeque<Child>,
 }
 
-impl Pool {
+impl ProcessPool {
     /// Creates a pool with `num_jobs` concurrent processes at max.
     ///
     /// If `0` is passed, the automatically determined number of CPU
     /// cores on this machine is used. To disable concurrency, pass
     /// `1`.
     pub fn new<N: Into<JobCount>>(num_jobs: N) -> Self {
-        Pool {
+        ProcessPool {
             num_jobs: num_jobs.into(),
             queue: VecDeque::new(),
         }
@@ -63,25 +64,26 @@ impl Pool {
 
     /// Creates a pool with a maximum of one job at once.
     ///
-    /// The call `Pool::new_trivial()` is equivalent to `Pool::new(1)`.
-    /// Such a trivial pool allows no parallelism at all.
+    /// The call `ProcessPool::new_trivial()` is equivalent to
+    /// `ProcessPool::new(1)`. Such a trivial pool allows no
+    /// parallelism at all.
     pub fn new_trivial() -> Self {
-        Pool::new(1)
+        ProcessPool::new(1)
     }
 
     /// Creates a pool with an automatically-detected maximum size.
     ///
-    /// The call `Pool::new_automatic()` is equivalent to
-    /// `Pool::new(0)`. Such a pool allows as many parallel processes
-    /// there are CPU cores on this machine.
+    /// The call `ProcessPool::new_automatic()` is equivalent to
+    /// `ProcessPool::new(0)`. Such a pool allows as many parallel
+    /// processes there are CPU cores on this machine.
     pub fn new_automatic() -> Self {
-        Pool::new(0)
+        ProcessPool::new(0)
     }
 
     /// Returns `true` if the pool is full.
     ///
     /// If this function returns `true`, the next call to `try_push`
-    /// will return `PoolAddResult::PoolFull`.
+    /// will return `TryPushResult::PoolFull`.
     pub fn is_full(&self) -> bool {
         self.queue.len() >= self.num_jobs.get()
     }
@@ -94,22 +96,22 @@ impl Pool {
     ///
     /// # Errors
     /// If the pool is full, the passed `command` is returned, wrapped
-    /// in a `PoolAddResult::PoolFull`.
+    /// in a `TryPushResult::PoolFull`.
     ///
     /// If the pool is not full and spawning the child process fails,
-    /// `PoolAddResult::CommandSpawned(Err(error))` is returned. The
+    /// `TryPushResult::CommandSpawned(Err(error))` is returned. The
     /// pool is not modified in this case.
     ///
     /// If spawning the child process, succeeds,
-    /// `PoolAddResult::CommandSpawned(Ok(()))` is returned.
-    pub fn try_push(&mut self, mut command: Command) -> PoolAddResult {
+    /// `TryPushResult::CommandSpawned(Ok(()))` is returned.
+    pub fn try_push(&mut self, mut command: Command) -> TryPushResult {
         if self.is_full() {
-            PoolAddResult::PoolFull(command)
+            TryPushResult::PoolFull(command)
         } else {
             let result = command
                 .spawn()
                 .map(|process| { self.queue.push_back(process); });
-            PoolAddResult::CommandSpawned(result)
+            TryPushResult::CommandSpawned(result)
         }
     }
 
@@ -197,14 +199,7 @@ impl Pool {
     }
 }
 
-impl Default for Pool {
-    /// Creates a new pool with `num_jobs` set to the number of cores.
-    fn default() -> Self {
-        Pool::new(0)
-    }
-}
-
-impl Drop for Pool {
+impl Drop for ProcessPool {
     fn drop(&mut self) {
         if !self.queue.is_empty() {
             panic!("dropping a non-empty process pool");
@@ -213,22 +208,22 @@ impl Drop for Pool {
 }
 
 
-/// Result-like type returned by `Pool::add()`.
-pub enum PoolAddResult {
+/// Result-like type returned by `ProcessPool::try_push()`.
+pub enum TryPushResult {
     /// The command could not be spawned because the pool is full.
     PoolFull(Command),
     /// The command was spawned, maybe even successfully.
     CommandSpawned(io::Result<()>),
 }
 
-impl PoolAddResult {
-    /// Expects that the result of `Pool::add()` was `CommandSpawned`.
+impl TryPushResult {
+    /// Expects that the result was `CommandSpawned`.
     ///
     /// This panics with a custom message if the command was not
     /// spawned.
     pub fn expect_spawned(self, err_msg: &'static str) -> io::Result<()> {
         match self {
-            PoolAddResult::CommandSpawned(result) => result,
+            TryPushResult::CommandSpawned(result) => result,
             _ => panic!(err_msg),
         }
     }

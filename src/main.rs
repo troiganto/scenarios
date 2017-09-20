@@ -21,6 +21,7 @@ use std::error::Error as StdError;
 use clap::{Arg, ArgGroup, App};
 
 use scenarios::Scenario;
+use consumers::CommandLine;
 use intoresult::{CommandFailed, IntoResult};
 
 
@@ -181,13 +182,14 @@ where
 {
     // Read the arguments.
     let keep_going = args.is_present("keep_going");
-    let command_line = command_line_from_args(args);
+    let command_line = command_line_from_args(args)?;
     let mut pool = if let Some(num) = args.value_of("jobs") {
-        consumers::CommandPool::new(num.parse()?)
+        let num: usize = num.parse()?;
+        consumers::ProcessPool::new(num)
     } else if args.is_present("jobs") {
-        consumers::CommandPool::new_automatic()
+        consumers::ProcessPool::new_automatic()
     } else {
-        consumers::CommandPool::new_trivial()
+        consumers::ProcessPool::new_trivial()
     };
     // Iterate over all scenarios. Because `pool` panicks if we drop it
     // while it's still full, we use an anonymous function to let no
@@ -203,10 +205,10 @@ where
             // Now the pool definitely has space and we can push the
             // new command.
             let command = command_line.with_scenario(&scenario?);
-            use consumers::PoolAddResult;
+            use consumers::pool::TryPushResult;
             match pool.try_push(command) {
-                PoolAddResult::CommandSpawned(result) => result?,
-                PoolAddResult::PoolFull(_) => panic!("pool full despite emptying"),
+                TryPushResult::CommandSpawned(result) => result?,
+                TryPushResult::PoolFull(_) => panic!("pool full despite emptying"),
             };
         }
         Ok(())
@@ -242,7 +244,8 @@ where
 }
 
 
-fn command_line_from_args<'a, I>(args: &clap::ArgMatches<'a>) -> Result<CommandLine, Error> {
+fn command_line_from_args<'a>(args: &clap::ArgMatches<'a>,)
+    -> Result<CommandLine<'a, Vec<&'a str>>, Error> {
     // Configure the command line.
     let command_line: Vec<_> = args.values_of("command_line")
         .ok_or(Error::NoCommandLine)?
@@ -252,7 +255,7 @@ fn command_line_from_args<'a, I>(args: &clap::ArgMatches<'a>) -> Result<CommandL
     command_line.ignore_env = args.is_present("ignore_env");
     command_line.insert_name_in_args = !args.is_present("no_insert_name");
     command_line.add_scenarios_name = !args.is_present("no_name_variable");
-    command_line
+    Ok(command_line)
 }
 
 
