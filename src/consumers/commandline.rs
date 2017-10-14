@@ -1,6 +1,8 @@
 
 use std::ffi::OsStr;
+use std::error::Error;
 use std::process::Command;
+use std::fmt::{self, Display};
 
 use scenarios::Scenario;
 use super::Printer;
@@ -8,6 +10,10 @@ use super::Printer;
 
 /// The name of the environment variable to hold the scenario name.
 const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
+
+
+/// Convenience alias for the `Result` type.
+type Result<T> = ::std::result::Result<T, VariableNameError>;
 
 
 /// A `Consumer` of `Scenario`s that executes a command line in them.
@@ -36,6 +42,12 @@ where
     /// If `true`, always define an additional environment variable
     /// with name `SCENARIOS_NAME_NAME` containing the scenario's name.
     pub add_scenarios_name: bool,
+    /// If `true`, it is an error to supply your own environment
+    /// variable `SCENARIOS_NAME_NAME` and set `add_scenarios_name` to
+    /// `true`. If this is `false` and `add_scenarios_name` is `true`,
+    /// such a variable gets silently overwritten. If
+    /// `add_scenarios_name` is `false`, this has no effect.
+    pub is_strict: bool,
     /// Phantom data to connect this object's lifetime to that of the
     /// string slices in the backing buffer.
     _lifetime: ::std::marker::PhantomData<&'a ()>,
@@ -79,6 +91,7 @@ where
             ignore_env: false,
             insert_name_in_args: true,
             add_scenarios_name: true,
+            is_strict: true,
             _lifetime: Default::default(),
         };
         Some(result)
@@ -103,7 +116,7 @@ where
     /// Prepare an `std::process::Command` from this command line.
     ///
     /// The returned `Command` can be used to spawn a child process.
-    pub fn with_scenario(&self, scenario: &Scenario) -> Command {
+    pub fn with_scenario(&self, scenario: &Scenario) -> Result<Command> {
         self.create_command(scenario.variables(), scenario.name())
     }
 
@@ -112,7 +125,7 @@ where
     /// The parameter `env_vars` should be set to the environment
     /// variables to add before executing the command. The parameter
     /// `name` is the name of the scenario to execute.
-    pub fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Command
+    pub fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -138,12 +151,35 @@ where
             cmd.env_clear();
         }
         for (k, v) in env_vars.into_iter() {
+            if self.add_scenarios_name && self.is_strict && k.as_ref() == SCENARIOS_NAME_NAME {
+                return Err(VariableNameError);
+            }
             cmd.env(k, v);
         }
         if self.add_scenarios_name {
             cmd.env(SCENARIOS_NAME_NAME, name);
         }
-        cmd
+        Ok(cmd)
+    }
+}
+
+
+#[derive(Debug)]
+pub struct VariableNameError;
+
+impl Display for VariableNameError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.description())
+    }
+}
+
+impl Error for VariableNameError {
+    fn description(&self) -> &str {
+        "bad variable name: SCENARIOS_NAME"
+    }
+
+    fn cause(&self) -> Option<&Error> {
+        None
     }
 }
 

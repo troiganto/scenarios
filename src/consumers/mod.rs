@@ -1,5 +1,5 @@
 mod printer;
-mod commandline;
+pub mod commandline;
 pub mod pool;
 
 pub use self::printer::Printer;

@@ -21,7 +21,7 @@ use std::error::Error as StdError;
 use clap::{Arg, ArgGroup, App, AppSettings};
 
 use scenarios::Scenario;
-use consumers::CommandLine;
+use consumers::commandline::{self, CommandLine};
 use intoresult::{CommandFailed, IntoResult};
 
 
@@ -253,7 +253,7 @@ where
             }
             // Now the pool definitely has space and we can push the
             // new command.
-            let command = command_line.with_scenario(&scenario?);
+            let command = command_line.with_scenario(&scenario?)?;
             use consumers::pool::TryPushResult;
             match pool.try_push(command) {
                 TryPushResult::CommandSpawned(result) => result?,
@@ -303,6 +303,7 @@ fn command_line_from_args<'a>(args: &'a clap::ArgMatches<'a>) -> Result<CommandL
     command_line.ignore_env = args.is_present("ignore_env");
     command_line.insert_name_in_args = !args.is_present("no_insert_name");
     command_line.add_scenarios_name = !args.is_present("no_export_name");
+    command_line.is_strict = !args.is_present("lax");
     Ok(command_line)
 }
 
@@ -312,6 +313,7 @@ enum Error {
     IoError(io::Error),
     FileParseError(scenarios::FileParseError),
     ScenarioError(scenarios::ScenarioError),
+    VariableNameError(commandline::VariableNameError),
     CommandFailed(CommandFailed),
     ParseIntError(ParseIntError),
     NoScenarios,
@@ -325,6 +327,7 @@ impl Display for Error {
             Error::FileParseError(ref err) => err.fmt(f),
             Error::ScenarioError(ref err) => err.fmt(f),
             Error::ParseIntError(ref err) => err.fmt(f),
+            Error::VariableNameError(ref err) => err.fmt(f),
             Error::CommandFailed(ref err) => err.fmt(f),
             _ => write!(f, "{}", self.description()),
         }
@@ -337,6 +340,7 @@ impl StdError for Error {
             Error::IoError(ref err) => err.description(),
             Error::FileParseError(ref err) => err.description(),
             Error::ScenarioError(ref err) => err.description(),
+            Error::VariableNameError(ref err) => err.description(),
             Error::CommandFailed(ref err) => err.description(),
             Error::ParseIntError(ref err) => err.description(),
             Error::NoScenarios => "no scenarios provided",
@@ -349,6 +353,7 @@ impl StdError for Error {
             Error::IoError(ref err) => Some(err),
             Error::FileParseError(ref err) => Some(err),
             Error::ScenarioError(ref err) => Some(err),
+            Error::VariableNameError(ref err) => Some(err),
             Error::CommandFailed(ref err) => Some(err),
             Error::ParseIntError(ref err) => Some(err),
             _ => None,
@@ -380,6 +385,12 @@ impl From<scenarios::MergeError> for Error {
             scenarios::MergeError::NoScenarios => Error::NoScenarios,
             scenarios::MergeError::ScenarioError(err) => Error::ScenarioError(err),
         }
+    }
+}
+
+impl From<commandline::VariableNameError> for Error {
+    fn from(err: commandline::VariableNameError) -> Self {
+        Error::VariableNameError(err)
     }
 }
 
