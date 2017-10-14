@@ -50,8 +50,8 @@ fn main() {
              // We print the default ourselves because the by default
              // (hahah), no quotes are printed around the value.
              .hide_default_value(true)
-             .help("A delimiter to use when merging the names of a \
-                    scenario combination. [default: ', ']"))
+             .help("The delimiter to use when combining scenario \
+                    names. [default: ', ']"))
         // Strict mode control.
         .group(ArgGroup::with_name("strict_mode")
                .args(&["strict", "lax"])
@@ -59,9 +59,14 @@ fn main() {
         .arg(Arg::with_name("strict")
              .short("s")
              .long("strict")
-             .help("This is the default. No two scenario files may \
-                    define the same scenario name or environment \
-                    variable."))
+             .help("Produce error on conflicting definitions of \
+                    environment variables. [default]")
+             .long_help("Produce error on conflicting definitions of \
+                         environment variables. No two scenario files \
+                         may define the same scenario name or \
+                         environment variable. You may not define a \
+                         variable called \"SCENARIOS_NAME\" unless \
+                         --no-name-variable is passed. [default]"))
         .arg(Arg::with_name("lax")
              .short("l")
              .long("lax")
@@ -71,9 +76,11 @@ fn main() {
              .takes_value(true)
              .value_name("SCENARIO FILES")
              .multiple(true)
-             .help("Input scenario files. If multiple files are \
-                    passed, all possible combinations between them \
-                    are used. Pass '-' to read from stdin."))
+             .help("The scenario files to process.")
+             .long_help("The scenario files to process. If multiple \
+                         files are passed, all possible combinations \
+                         between them are iterated. Pass '-' to read \
+                         from stdin."))
         // Only one of --print, --print0, and <command> may be passed.
         .group(ArgGroup::with_name("output")
             .args(&["print", "print0", "command_line"])
@@ -85,43 +92,59 @@ fn main() {
              .value_name("FORMAT")
              .min_values(0)
              .max_values(1)
-             .help("Do not execute a command, just print \
-                    SCENARIOS_NAME for all combinations of scenarios \
-                    to stdout. Names are separated by newlines. An \
-                    optional format string may be passed, in which \
-                    '{}' gets replaced with SCENARIOS_NAME."))
+             .help("Print SCENARIOS_NAME to stdout for each scenario \
+                    combination. [default]")
+             .long_help("Print SCENARIOS_NAME to stdout for each \
+                         scenario combination. Names are separated by \
+                         newlines. An optional format string may be \
+                         passed, in which \"{}\" gets replaced with \
+                         SCENARIOS_NAME. [default]"))
         .arg(Arg::with_name("print0")
              .long("print0")
              .takes_value(true)
              .value_name("FORMAT")
              .min_values(0)
              .max_values(1)
-             .help("Like --print, but separate scenario combinations \
-                    with a null byte instead of a newline. (This is \
-                    useful in combination with 'xargs -0'.)"))
+             .help("Like --print, but separate scenario names with a \
+                    null byte instead of a newline.")
+             .long_help("Like --print, but separate scenario names \
+                         with a null byte instead of a newline. This \
+                         is useful when piping the names to \
+                         \"xargs -0\"."))
         // Command line execution.
         .arg(Arg::with_name("command_line")
              .takes_value(true)
              .value_name("COMMAND")
              .multiple(true)
              .last(true)
-             .help("The command line to execute."))
+             .help("A command line to execute for each scenario \
+                    combination.")
+             .long_help("A command line to execute for each scenario \
+                         combination. This must always preceded by \
+                         \"--\" to distinguish it from the list of \
+                         scenario files."))
         .arg(Arg::with_name("ignore_env")
              .short("I")
              .long("ignore-env")
              .requires("command_line")
-             .help("Do not export the current environment the \
-                    subshells."))
+             .help("Don't export the current environment to COMMAND.")
+             .long_help("Don't export the current environment to \
+                         COMMAND. If this flag is passed, COMMAND sees \
+                         _only_ the environment variables defined in \
+                         the scenario files."))
         .arg(Arg::with_name("no_insert_name")
              .long("no-insert-name")
              .requires("command_line")
-             .help("Do not replace '{}' with SCENARIOS_NAME in the \
-                    command line."))
+             .help("Don't replace '{}' with SCENARIOS_NAME when \
+                    reading COMMAND."))
         .arg(Arg::with_name("no_name_variable")
              .long("no-name-variable")
              .requires("command_line")
-             .help("Do not export the environment variable \
-                    SCENARIOS_NAME to the subshells."))
+             .help("Don't export SCENARIOS_NAME to COMMAND.")
+             .long_help("Don't export SCENARIOS_NAME to COMMAND. If \
+                         use this parameter, you are able to define \
+                         your own SCENARIOS_NAME without it being \
+                         overwritten. (Why would you, though?)"))
         // Multi-processing.
         .arg(Arg::with_name("jobs")
              .short("j")
@@ -132,9 +155,10 @@ fn main() {
              .min_values(0)
              .max_values(1)
              .validator(|s| if s.parse::<usize>().is_ok() { Ok(()) } else { Err(s) })
-            .help("The number of scenarios to execute in parallel. \
-                   If no number is passed, the number of CPUs on \
-                   this machine is used."));
+            .help("The number of COMMANDs to execute in parallel.")
+            .long_help("The number of COMMANDs to execute in parallel. \
+                       If no number is passed, the detected number of \
+                       CPUs on this machine is used."));
 
     // We clone `app` here because `get_matches` consumes it -- but we
     // might still need it to print the short help!
@@ -146,7 +170,10 @@ fn main() {
         app.after_help("").print_help().unwrap();
         return;
     } else if args.is_present("long_help") {
-        app.after_help(LONG_EXPLANATION).print_help().unwrap();
+        app.after_help(LONG_EXPLANATION)
+            .print_long_help()
+            .unwrap();
+        print!("\n\n");
         return;
     }
 
