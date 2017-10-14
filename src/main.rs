@@ -18,7 +18,7 @@ use std::num::ParseIntError;
 use std::fmt::{self, Display};
 use std::error::Error as StdError;
 
-use clap::{Arg, ArgGroup, App};
+use clap::{Arg, ArgGroup, App, AppSettings};
 
 use scenarios::Scenario;
 use consumers::CommandLine;
@@ -30,10 +30,14 @@ fn main() {
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())
-        .after_help(LONG_EXPLANATION)
         .setting(clap::AppSettings::TrailingVarArg)
-        .help_message("Print detailed help information.")
+        .setting(AppSettings::DeriveDisplayOrder)
         // General args.
+        // We create our own --help so that the arguments are correctly
+        // ordered.
+        .arg(Arg::with_name("long_help")
+             .long("help")
+             .help("Print detailed help information."))
         .arg(Arg::with_name("short_help")
              .short("h")
              .help("Print short help information."))
@@ -133,6 +137,9 @@ fn main() {
     // it.
     if args.is_present("short_help") {
         app.after_help("").print_help().unwrap();
+        return;
+    } else if args.is_present("long_help") {
+        app.after_help(LONG_EXPLANATION).print_help().unwrap();
         return;
     }
 
