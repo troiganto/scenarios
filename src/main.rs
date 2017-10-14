@@ -66,7 +66,7 @@ fn main() {
                          may define the same scenario name or \
                          environment variable. You may not define a \
                          variable called \"SCENARIOS_NAME\" unless \
-                         --no-name-variable is passed. [default]"))
+                         --no-export-name is passed. [default]"))
         .arg(Arg::with_name("lax")
              .short("l")
              .long("lax")
@@ -137,8 +137,8 @@ fn main() {
              .requires("command_line")
              .help("Don't replace '{}' with SCENARIOS_NAME when \
                     reading COMMAND."))
-        .arg(Arg::with_name("no_name_variable")
-             .long("no-name-variable")
+        .arg(Arg::with_name("no_export_name")
+             .long("no-export-name")
              .requires("command_line")
              .help("Don't export SCENARIOS_NAME to COMMAND.")
              .long_help("Don't export SCENARIOS_NAME to COMMAND. If \
@@ -302,7 +302,7 @@ fn command_line_from_args<'a>(args: &'a clap::ArgMatches<'a>) -> Result<CommandL
         .ok_or(Error::NoCommandLine)?;
     command_line.ignore_env = args.is_present("ignore_env");
     command_line.insert_name_in_args = !args.is_present("no_insert_name");
-    command_line.add_scenarios_name = !args.is_present("no_name_variable");
+    command_line.add_scenarios_name = !args.is_present("no_export_name");
     Ok(command_line)
 }
 
@@ -445,7 +445,7 @@ This check can be disabled by passing the --lax option. In that case, \
 later definitions of variables will overwrite former definitions.
 
 When running, scenarios adds an additional variable SCENARIOS_NAME to \
-each scenario (unless --no-name-variable is passed). This variable \
+each scenario (unless --no-export-name is passed). This variable \
 contains the name of the current combination of scenarios. Strict \
 mode will prevent you from defining SCENARIOS_NAME yourself. With the \
 --lax option, your own definition will silently be overwritten.
