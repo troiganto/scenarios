@@ -68,15 +68,12 @@ fn main() {
              .help("Disable strict mode."))
         // Input control.
         .arg(Arg::with_name("input")
-             .short("i")
              .takes_value(true)
-             .value_name("SCENARIO FILE")
-             .number_of_values(1)
+             .value_name("SCENARIO FILES")
              .multiple(true)
              .help("Input scenario files. If multiple files are \
                     passed, all possible combinations between them \
-                    are used. Pass '-' to read from stdin. You may \
-                    pass this option more than once."))
+                    are used. Pass '-' to read from stdin."))
         // Only one of --print, --print0, and <command> may be passed.
         .group(ArgGroup::with_name("output")
             .args(&["print", "print0", "command_line"])
@@ -387,19 +384,30 @@ you have the following scenario files:
 
 Then, the following call:
 
-    scenarios -i numbers.ini -i letters.ini some_program
+    scenarios numbers.ini letters.ini -- some_program
 
-will execute the following six scenario combinations: \"1, a\"; \
-\"1, b\"; \"2, a\"; \"2, b\"; \"3, a\"; and \"3, b\".
+will execute \"some_program\" six times, each time in a different \
+environment: \"1, a\"; \"1, b\"; \"2, a\"; \"2, b\"; \"3, a\"; and \
+\"3, b\".
+
+If you don't pass a program, the default is to simply print the names \
+of all scenario combinations to stdout. The following call:
+
+    scenarios numbers.ini letters.ini
+
+will produce the following output:
+
+    1, a
+    1, b
+    2, a
+    2, b
+    3, a
+    3, b
 
 It is an error if two files define the same scenario name, or if two \
 scenarios from different files define the same environment variable. \
 This check can be disabled by passing the --lax option. In that case, \
 later definitions of variables will overwrite former definitions.
-
-After reading the scenario files, the remainder of the command line, \
-noted above as `command_line`, is executed once for each combination \
-of scenarios. This may be parallelized by passing the --jobs option.
 
 When running, scenarios adds an additional variable SCENARIOS_NAME to \
 each scenario (unless --no-name-variable is passed). This variable \
