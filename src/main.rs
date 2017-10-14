@@ -199,7 +199,7 @@ fn try_main<'a>(args: &clap::ArgMatches<'a>) -> Result<(), Error> {
     // Collect scenario file names.
     let scenario_files: Vec<Vec<Scenario>> = args.values_of("input")
         .ok_or(Error::NoScenarios)?
-        .map(scenarios::from_file)
+        .map(scenarios::from_file_or_stdin)
         .collect::<Result<_, _>>()?;
 
     // Create and configure a scenarios merger.

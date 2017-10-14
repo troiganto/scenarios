@@ -17,6 +17,18 @@ where
 }
 
 
+/// I  `path == "-"`, dispatches to `from_named_buffer`, otherwise to
+/// `from_file`.
+pub fn from_file_or_stdin<S: Into<String>>(path: S) -> Result<Vec<Scenario>, FileParseError> {
+    let path = path.into();
+    let stdin = io::stdin();
+    if path == "-" {
+        from_named_buffer(stdin.lock(), "<stdin>")
+    } else {
+        from_file(path)
+    }
+}
+
 /// Opens a file and reads scenarios from it.
 ///
 /// If an error occurs, it contains the path of the offending file.
