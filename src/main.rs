@@ -45,7 +45,10 @@ fn main() {
              .short("d")
              .long("delimiter")
              .takes_value(true)
+             .value_name("STRING")
              .default_value(", ")
+             // We print the default ourselves because the by default
+             // (hahah), no quotes are printed around the value.
              .hide_default_value(true)
              .help("A delimiter to use when merging the names of a \
                     scenario combination. [default: ', ']"))
@@ -67,6 +70,7 @@ fn main() {
         .arg(Arg::with_name("input")
              .short("i")
              .takes_value(true)
+             .value_name("SCENARIO FILE")
              .number_of_values(1)
              .multiple(true)
              .help("Input scenario files. If multiple files are \
@@ -80,6 +84,8 @@ fn main() {
         // Scenario name printing.
         .arg(Arg::with_name("print")
              .long("print")
+             .takes_value(true)
+             .value_name("FORMAT")
              .min_values(0)
              .max_values(1)
              .help("Do not execute a command, just print \
@@ -89,6 +95,8 @@ fn main() {
                     '{}' gets replaced with SCENARIOS_NAME."))
         .arg(Arg::with_name("print0")
              .long("print0")
+             .takes_value(true)
+             .value_name("FORMAT")
              .min_values(0)
              .max_values(1)
              .help("Like --print, but separate scenario combinations \
@@ -97,6 +105,7 @@ fn main() {
         // Command line execution.
         .arg(Arg::with_name("command_line")
              .takes_value(true)
+             .value_name("COMMAND")
              .multiple(true)
              .last(true)
              .help("The command line to execute."))
@@ -122,6 +131,7 @@ fn main() {
              .long("jobs")
              .requires("command_line")
              .takes_value(true)
+             .value_name("N")
              .min_values(0)
              .max_values(1)
              .validator(|s| if s.parse::<usize>().is_ok() { Ok(()) } else { Err(s) })
