@@ -1,230 +1,214 @@
 
-use std::io;
-use std::process::{Child, Command, ExitStatus};
-use std::collections::VecDeque;
-use std::thread;
-use std::time;
-
-use num_cpus;
+use std::process::{Child, ExitStatus};
 
 
-/// Type that specifies how many jobs should run in parallel.
+/// Tokens returned by `TokenStock`.
 ///
-/// This type is basically a wrapper around `usize`. Only the value
-/// `0` is treated specially and gets replaced with the detected
-/// numbers of CPU cores on the current machine.
-pub struct JobCount(usize);
+/// The only purpose of these tokens is to be handed out and redeemed.
+/// This allows controlling how many jobs are running at any time.
+#[derive(Debug)]
+#[must_use]
+pub struct PoolToken(());
 
-impl JobCount {
-    /// Returns the wrapped value.
-    pub fn get(&self) -> usize {
-        self.0
+/// A stock of `PoolToken`s.
+///
+/// This type allows predefining a set of tokens which may be given
+/// out, carried around, and later redeemed. The maximum number of
+/// available tokens is specified at construction and cannot be
+/// changed.
+///
+/// `ProcessPool` limits the number of child processes that can run at
+/// any time by requiring a token when accepting a new child process
+/// and by only returning said token once the child has finished
+/// running.
+#[derive(Debug)]
+pub struct TokenStock {
+    /// The number of tokens remaining in this stock.
+    num_tokens: usize,
+}
+
+impl TokenStock {
+    /// Creates a new stock with an initial size of `max_tokens`.
+    ///
+    /// # Panics
+    /// This panics if `max_tokens` is `0`.
+    pub fn new(max_tokens: usize) -> Self {
+        if max_tokens == 0 {
+            panic!("invalid maximum number of tokens: 0")
+        }
+        Self { num_tokens: max_tokens }
+    }
+
+    /// Returns the number of currently available tokens.
+    pub fn num_remaining(&self) -> usize {
+        self.num_tokens
+    }
+
+    /// Returns `Some(token)` if a token is available, otherwise `None`.
+    pub fn get_token(&mut self) -> Option<PoolToken> {
+        if self.num_tokens > 0 {
+            self.num_tokens -= 1;
+            Some(PoolToken(()))
+        } else {
+            None
+        }
+    }
+
+    /// Accepts a previously handed-out token back into the stock.
+    pub fn return_token(&mut self, _: PoolToken) {
+        self.num_tokens += 1;
     }
 }
 
-impl From<usize> for JobCount {
-    /// Converts from `int`, replacing `0` with the number of cores.
-    fn from(n: usize) -> Self {
-        JobCount(if n > 0 { n } else { num_cpus::get() })
+impl Default for TokenStock {
+    /// The default for a token stock is to contain a single token.
+    fn default() -> Self {
+        Self::new(1)
     }
 }
 
 
 /// A pool of processes which can run concurrently.
 ///
-/// The pool is used by continously `add`ing `std::process::Command`
-/// objects that are used to spawn new processes. The `add()` call will
-/// block if the maximum number of concurrent processes has been
-/// reached. Once all processes have been submitted, you should call
-/// `join()` to wait until they have all finished.
+/// Adding a new child process into this pool requires a `PoolToken`
+/// handed out by `TokenStock`. This allows us to limit the number of
+/// child process that can run at a time.
 ///
 /// # Panics
-/// Dropping a `ProcessPool` with some processes still queued causes a
-/// panic. To avoid this, always call `join` before dropping your
-/// `ProcessPool`.
+/// Waiting on a child processes and even just checking whether it has
+/// finished can cause a panic.
+///
+/// As a safety measure, `ProcessPool` also panics if it is dropped
+/// while still containing child processes. You must ensure that the
+/// pool is empty before leaving its scope.
+#[derive(Debug, Default)]
 pub struct ProcessPool {
-    /// The maximum number of concurrent processes.
-    pub num_jobs: JobCount,
-    /// The internal queue of added processes.
-    queue: VecDeque<Child>,
+    /// The list of currently running child processes.
+    queue: Vec<(Child, PoolToken)>,
 }
 
 impl ProcessPool {
-    /// Creates a pool with `num_jobs` concurrent processes at max.
-    ///
-    /// If `0` is passed, the automatically determined number of CPU
-    /// cores on this machine is used. To disable concurrency, pass
-    /// `1`.
-    pub fn new<N: Into<JobCount>>(num_jobs: N) -> Self {
-        ProcessPool {
-            num_jobs: num_jobs.into(),
-            queue: VecDeque::new(),
-        }
+    /// Creates a new, empty process pool.
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Creates a pool with a maximum of one job at once.
-    ///
-    /// The call `ProcessPool::new_trivial()` is equivalent to
-    /// `ProcessPool::new(1)`. Such a trivial pool allows no
-    /// parallelism at all.
-    pub fn new_trivial() -> Self {
-        ProcessPool::new(1)
+    /// Creates a new, empty process pool with a given capacity.
+    pub fn with_capacity(cap: usize) -> Self {
+        Self { queue: Vec::with_capacity(cap) }
     }
 
-    /// Creates a pool with an automatically-detected maximum size.
-    ///
-    /// The call `ProcessPool::new_automatic()` is equivalent to
-    /// `ProcessPool::new(0)`. Such a pool allows as many parallel
-    /// processes there are CPU cores on this machine.
-    pub fn new_automatic() -> Self {
-        ProcessPool::new(0)
+    /// Returns `true` if no child processes are currently in the pool.
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
     }
 
-    /// Returns `true` if the pool is full.
-    ///
-    /// If this function returns `true`, the next call to `try_push`
-    /// will return `TryPushResult::PoolFull`.
-    pub fn is_full(&self) -> bool {
-        self.queue.len() >= self.num_jobs.get()
+    /// Adds a new child process to the pool.
+    pub fn push(&mut self, child: Child, token: PoolToken) {
+        self.queue.push((child, token))
     }
 
-    /// Adds a new process to the pool.
+    /// Returns an iterator over all finished child processes.
     ///
-    /// If the pool is full, this call fails and returns the passed
-    /// `command`. If the pool is not full, a new child process is
-    /// spawned from the `command` and added to the pool.
-    ///
-    /// # Errors
-    /// If the pool is full, the passed `command` is returned, wrapped
-    /// in a `TryPushResult::PoolFull`.
-    ///
-    /// If the pool is not full and spawning the child process fails,
-    /// `TryPushResult::CommandSpawned(Err(error))` is returned. The
-    /// pool is not modified in this case.
-    ///
-    /// If spawning the child process, succeeds,
-    /// `TryPushResult::CommandSpawned(Ok(()))` is returned.
-    pub fn try_push(&mut self, mut command: Command) -> TryPushResult {
-        if self.is_full() {
-            TryPushResult::PoolFull(command)
-        } else {
-            let result = command
-                .spawn()
-                .map(|process| { self.queue.push_back(process); });
-            TryPushResult::CommandSpawned(result)
-        }
+    /// Each call to `FinishedIter::next` removes `Some((child, token))`
+    /// from the pool. If all child processes are still running, the
+    /// call to `next` returns `None`.
+    pub fn reap(&mut self) -> FinishedIter {
+        FinishedIter::new(self)
     }
 
     /// Waits for all processes left in the queue to finish.
     ///
-    /// # Errors
-    /// This call fails if any IO error occurs while waiting.
+    /// The returned list contains the `ExitStatus` and `PoolToken` of
+    /// all remaining child processes.
     ///
-    /// If a waited-on process fails, this call fails with
-    /// `Error::CommandFailed`. A waited-on process fails e.g. by
-    /// returning a non-zero exit status or by aborting through a
-    /// signal.
-    ///
-    /// Even if the call fails, all processes are waited on.
-    pub fn join(&mut self) -> io::Result<Vec<ExitStatus>> {
+    /// # Panics
+    /// This panics if any IO error occurs while waiting on a child.
+    pub fn join_all(&mut self) -> Vec<(ExitStatus, PoolToken)> {
+        // TODO: Find a way to avoid panics.
         self.queue
             .drain(..)
-            .map(|mut job| job.wait())
+            .map(|(child, token)| (wait_unwrap(child), token))
             .collect()
-    }
-
-    /// Like pop_finished(), but returns `Ok(None)` if the pool is not
-    /// completely full.
-    pub fn pop_finished_if_full(&mut self) -> io::Result<Option<ExitStatus>> {
-        if self.is_full() {
-            self.pop_finished()
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Finds the first finished child process in the queue.
-    ///
-    /// If the queue is empty, this method just returns `Ok(None)`.
-    ///
-    /// Otherwise, this method sequentially tries to wait for all
-    /// queued processes. Once a process has finished, it is
-    /// removed from the queue and its exit status is returned.
-    ///
-    /// # Errors
-    /// This call returns `Err(error)` if waiting on any process fails.
-    /// The failing process may or may not be left in the queue.
-    pub fn pop_finished(&mut self) -> io::Result<Option<ExitStatus>> {
-        if self.queue.is_empty() {
-            return Ok(None);
-        }
-        let index;
-        loop {
-            match self.find_first_finished()? {
-                Some(i) => {
-                    index = i;
-                    break;
-                },
-                None => {
-                    thread::sleep(time::Duration::from_millis(10));
-                },
-            }
-        }
-        self.queue
-            .remove(index)
-            .expect("index returned by `find_finished` invalid")
-            .wait()
-            .map(Option::from)
-    }
-
-    /// Finds the first finished child process in the queue.
-    ///
-    /// This sequentially tries to wait for all queued processes. If
-    /// a process turns out to have finished, its index in the queue is
-    /// returned immediately.
-    ///
-    /// If all processes are still running, `Ok(None)` is returned.
-    ///
-    /// # Errors
-    /// This call fails if any call to `try_wait()` fails.
-    fn find_first_finished(&mut self) -> io::Result<Option<usize>> {
-        for (i, job) in self.queue.iter_mut().enumerate() {
-            // Return on error or if `job` is finished.
-            if job.try_wait()?.is_some() {
-                return Ok(Some(i));
-            }
-        }
-        // No job finished, report that.
-        Ok(None)
     }
 }
 
 impl Drop for ProcessPool {
     fn drop(&mut self) {
-        if !self.queue.is_empty() {
+        if !self.is_empty() {
             panic!("dropping a non-empty process pool");
         }
     }
 }
 
 
-/// Result-like type returned by `ProcessPool::try_push()`.
-pub enum TryPushResult {
-    /// The command could not be spawned because the pool is full.
-    PoolFull(Command),
-    /// The command was spawned, maybe even successfully.
-    CommandSpawned(io::Result<()>),
+/// An iterator over the finished child processes in a `ProcessPool`.
+///
+/// # Panics
+/// The `next` method calls `std::process::Child::try_wait` and unwraps
+/// the result. Thus, any call to `next` can, in theory, panic.
+pub struct FinishedIter<'a> {
+    /// The borrowed queue of child processes.
+    queue: &'a mut Vec<(Child, PoolToken)>,
+    /// The current iteration index.
+    index: usize,
 }
 
-impl TryPushResult {
-    /// Expects that the result was `CommandSpawned`.
-    ///
-    /// This panics with a custom message if the command was not
-    /// spawned.
-    pub fn expect_spawned(self, err_msg: &'static str) -> io::Result<()> {
-        match self {
-            TryPushResult::CommandSpawned(result) => result,
-            _ => panic!(err_msg),
+impl<'a> FinishedIter<'a> {
+    /// Creates a new iterator that borrows `pool`'s queue.
+    fn new(pool: &'a mut ProcessPool) -> Self {
+        FinishedIter {
+            queue: &mut pool.queue,
+            index: 0,
         }
     }
+}
+
+impl<'a> Iterator for FinishedIter<'a> {
+    type Item = (ExitStatus, PoolToken);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Iterate until we've traversed the entire vector.
+        while self.index < self.queue.len() {
+            // The separate scope limits the borrow of `child` while we
+            // check whether `child` has finished.
+            let is_finished = {
+                let (ref mut child, _) = self.queue[self.index];
+                is_finished(child)
+            };
+            // If `child` _is_ finished, we remove it from the queue and
+            // return it. The hole is filled up by the last element of
+            // the vector. We thus leave `index` unchanged.
+            if is_finished {
+                let (child, token) = self.queue.swap_remove(self.index);
+                return Some((wait_unwrap(child), token));
+            } else {
+                self.index += 1;
+            }
+        }
+        None
+    }
+}
+
+
+/// Calls `child.wait()` and unwraps the result.
+///
+/// # Panics
+/// This panics if any IO error occurs while waiting.
+fn wait_unwrap(mut child: Child) -> ExitStatus {
+    child
+        .wait()
+        .expect("I/O error while waiting on child process")
+}
+
+
+/// Returns `true` if the `child` has finished running.
+///
+/// # Panics
+/// This unwraps the result of `child.try_wait` and thus may panic.
+fn is_finished(child: &mut Child) -> bool {
+    child
+        .try_wait()
+        .expect("I/O error while querying child process status")
+        .is_some()
 }

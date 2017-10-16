@@ -4,4 +4,4 @@ pub mod pool;
 
 pub use self::printer::Printer;
 pub use self::commandline::CommandLine;
-pub use self::pool::ProcessPool;
+pub use self::pool::{ProcessPool, PoolToken, TokenStock};

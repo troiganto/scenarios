@@ -15,6 +15,8 @@ mod intoresult;
 
 
 use std::io;
+use std::time;
+use std::thread;
 use std::num::ParseIntError;
 use std::fmt::{self, Display};
 use std::error::Error as StdError;
@@ -86,44 +88,50 @@ where
     // Read the arguments.
     let keep_going = args.is_present("keep_going");
     let command_line = command_line_from_args(args)?;
-    let mut pool = if let Some(num) = args.value_of("jobs") {
-        let num: usize = num.parse()?;
-        consumers::ProcessPool::new(num)
+    let mut token_stock = if let Some(num) = args.value_of("jobs") {
+        consumers::TokenStock::new(num.parse::<usize>()?)
     } else if args.is_present("jobs") {
-        consumers::ProcessPool::new_automatic()
+        consumers::TokenStock::new(num_cpus::get())
     } else {
-        consumers::ProcessPool::new_trivial()
+        consumers::TokenStock::new(1)
     };
-    // Iterate over all scenarios. Because `pool` panicks if we drop it
-    // while it's still full, we use an anonymous function to let no
-    // result escape. TODO: Wait for `catch_expr`.
-    let run_result = (|| {
+    let mut children = consumers::ProcessPool::with_capacity(token_stock.num_remaining());
+    // Iterate over all scenarios. Because `children` panicks if we
+    // drop it while it's still full, we use an anonymous function to
+    // let no result escape. TODO: Wait for `catch_expr`.
+    let run_result: Result<(), Error> = (|| {
         for scenario in scenarios {
-            // If the pool is full, we free space and check for errors.
-            if let Some(exit_status) = pool.pop_finished_if_full()? {
-                if !keep_going {
-                    exit_status.into_result()?;
+            let scenario = scenario?;
+            let mut waiting_for_token = true;
+            while waiting_for_token {
+                // Clear out finished children and check for errors.
+                for (exit_status, token) in children.reap() {
+                    token_stock.return_token(token);
+                    if !keep_going {
+                        exit_status.into_result()?;
+                    }
+                }
+                // If there are free tokens, we take one and start a new process.
+                // Otherwise, we just wait and try again.
+                if let Some(token) = token_stock.get_token() {
+                    waiting_for_token = false;
+                    let mut command = command_line.with_scenario(&scenario)?;
+                    children.push(command.spawn()?, token);
+                } else {
+                    thread::sleep(time::Duration::from_millis(10))
                 }
             }
-            // Now the pool definitely has space and we can push the
-            // new command.
-            let command = command_line.with_scenario(&scenario?)?;
-            use consumers::pool::TryPushResult;
-            match pool.try_push(command) {
-                TryPushResult::CommandSpawned(result) => result?,
-                TryPushResult::PoolFull(_) => panic!("pool full despite emptying"),
-            };
         }
         Ok(())
     })();
-    let exit_statuses = run_result.and(pool.join().map_err(Error::from))?;
-    // Here, the pool is empty. If we don't ignore failed child
-    // processes, we check each of them and fail on the first error.
+    let exit_statuses = children.join_all();
+    // Here, the pool is empty and we can evaluate all possible errors
+    // (if we want to).
     if !keep_going {
-        exit_statuses
-            .into_iter()
-            .map(IntoResult::into_result)
-            .collect::<Result<Vec<()>, _>>()?;
+        run_result?;
+        for (exit_status, _) in exit_statuses {
+            exit_status.into_result()?;
+        }
     }
     Ok(())
 }
