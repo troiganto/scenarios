@@ -33,18 +33,15 @@ impl Scenario {
     ///
     /// # Errors
     /// This call fails with `ParseError::InvalidName` if `name`
-    /// is the empty string or contains a comma.
+    /// is the empty string or contains a null byte.
     pub fn new<S: Into<String>>(name: S) -> Result<Self, ScenarioError> {
         let name = name.into();
         if name.is_empty() || name.contains('\0') {
             return Err(ScenarioError::InvalidName(name));
+        } else {
+            let variables = HashMap::new();
+            Ok(Scenario { name, variables })
         }
-        Ok(
-            Scenario {
-                name: name,
-                variables: HashMap::new(),
-            },
-        )
     }
 
     /// Adds another variable definition of the current set.
@@ -101,6 +98,11 @@ impl Scenario {
         self.variables.into_iter()
     }
 
+    /// Splits the scenario into the name and the variables.
+    pub fn into_parts(self) -> (String, hash_map::IntoIter<String, String>) {
+        (self.name, self.variables.into_iter())
+    }
+
     /// Merges another scenario into this one.
     ///
     /// This combines the names and variables of both scenarios.
@@ -136,7 +138,7 @@ impl Scenario {
 
 impl Display for Scenario {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, r#"Scenario "{}""#, self.name)
+        write!(f, "Scenario \"{}\"", self.name)
     }
 }
 
@@ -146,6 +148,7 @@ fn merge_names(left: &mut String, delimiter: &str, right: &str) {
     left.push_str(delimiter);
     left.push_str(right);
 }
+
 
 fn merge_vars<I>(map: &mut HashMap<String, String>, to_add: I, strict: bool) -> Result<(), String>
 where
