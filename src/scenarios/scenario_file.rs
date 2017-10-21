@@ -57,7 +57,7 @@ where
 
 /// The iterator returned by `Scenario::iter_from_file()`.
 #[derive(Debug)]
-pub struct ScenariosIter<F: BufRead> {
+struct ScenariosIter<F: BufRead> {
     /// The wrapped iterator of input file lines.
     lines: io::Lines<F>,
     /// Intermediate buffer for the next scenario's name.
