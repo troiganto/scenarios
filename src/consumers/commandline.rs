@@ -193,8 +193,9 @@ mod tests {
         let cl = CommandLine::new(["echo", "-n"]).unwrap();
         let env: &[(&str, &str)] = &[];
         cl.create_command(env.into_iter().cloned(), "")
+            .expect("CommandLine::create_command failed")
             .status()
-            .unwrap();
+            .expect("Child::status failed");
     }
 
     #[test]
@@ -203,8 +204,9 @@ mod tests {
         cl.insert_name_in_args = true;
         let env: &[(&str, &str)] = &[];
         let output = cl.create_command(env.into_iter().cloned(), "name")
+            .expect("CommandLine::create_command failed")
             .output()
-            .unwrap();
+            .expect("Child::output failed");
         let output = String::from_utf8(output.stdout).unwrap();
         assert_eq!(output, "a cool name!\n".to_owned());
     }
