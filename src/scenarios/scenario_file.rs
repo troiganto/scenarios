@@ -43,7 +43,7 @@ pub fn from_file<S: Borrow<str>>(path: S) -> Result<Vec<Scenario>, ParseError> {
     let path = path.borrow();
     match File::open(path) {
         Ok(file) => from_named_buffer(io::BufReader::new(file), path),
-        Err(err) => Err(ParseError(ErrorLocation::new(path.to_owned()), err.into())),
+        Err(err) => Err(ParseError::new(ErrorLocation::new(path), err)),
     }
 }
 
@@ -167,7 +167,7 @@ impl<'a, F: BufRead> Iterator for ScenariosIter<'a, F> {
         match self.read_next_section() {
             Ok(Some(result)) => Some(Ok(result)),
             Ok(None) => None,
-            Err(err) => Some(Err(ParseError(self.location.to_owned(), err))),
+            Err(err) => Some(Err(ParseError::new(self.location, err))),
         }
     }
 }
@@ -181,6 +181,19 @@ impl<'a, F: BufRead> Iterator for ScenariosIter<'a, F> {
 pub struct ParseError(ErrorLocation<String>, ErrorKind);
 
 impl ParseError {
+    /// Creates a new `ParseError`, performing coercions as necessary.
+    ///
+    /// `loc` is a `ErrorLocation` borrowing or owning its `filename`.
+    /// `kind` is any error that can be converted to `ErrorKind`.
+    fn new<'a, S, E>(loc: ErrorLocation<&'a S>, kind: E) -> Self
+    where
+        String: Borrow<S>,
+        S: ToOwned<Owned = String> + ?Sized,
+        E: Into<ErrorKind>,
+    {
+        ParseError(loc.to_owned(), kind.into())
+    }
+
     /// Returns the name of the file in which the error occurred.
     pub fn filename(&self) -> &str {
         &self.0.filename
@@ -214,7 +227,7 @@ where
     E: Into<ErrorKind>,
 {
     fn from(context: Context<ErrorLocation<&'a S>, E>) -> Self {
-        ParseError(context.0.to_owned(), context.1.into())
+        ParseError::new(context.0, context.1)
     }
 }
 
