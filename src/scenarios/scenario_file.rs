@@ -41,10 +41,9 @@ pub fn from_file_or_stdin<S: Borrow<str>>(path: S) -> Result<Vec<Scenario>, Pars
 /// file.
 pub fn from_file<S: Borrow<str>>(path: S) -> Result<Vec<Scenario>, ParseError> {
     let path = path.borrow();
-    match File::open(path) {
-        Ok(file) => from_named_buffer(io::BufReader::new(file), path),
-        Err(err) => Err(ParseError::new(ErrorLocation::new(path), err)),
-    }
+    let file = File::open(path).context(ErrorLocation::new(path))?;
+    let file = io::BufReader::new(file);
+    from_named_buffer(file, path)
 }
 
 /// Reads scenarios from a given buffered reader.
@@ -63,6 +62,9 @@ struct ScenariosIter<'a, F: BufRead> {
     /// The wrapped iterator of input file lines.
     lines: io::Lines<F>,
     /// Intermediate buffer for the next scenario's name.
+    ///
+    /// This value being `None` signals that this iterator is exhausted
+    /// and will yield no further `Scenario`s.
     next_header: Option<String>,
     /// The current filename and line number, used for error messages.
     location: ErrorLocation<&'a str>,
@@ -91,10 +93,12 @@ impl<'a, F: BufRead> ScenariosIter<'a, F> {
 
     /// Drop lines until the next header line appears.
     ///
-    /// This sets `self.next_header` to the found header line. If no
-    /// further header line is found, it is set to `None`. No variable
-    /// definitions may occur. This should only be called from within
-    /// `new()`.
+    /// This sets `self.next_header` to the next header line and skips
+    /// all lines until then. If no next header line is found,
+    /// `self.next_header` is set to `None`. No  variable definitions
+    /// may occur in the skipped portion.
+    ///
+    /// This should only be called from within `new()`.
     ///
     /// # Errors
     /// * `io::Error` if a line cannot be read.
@@ -103,13 +107,16 @@ impl<'a, F: BufRead> ScenariosIter<'a, F> {
     ///   no scenario has been declared yet, any definition would be
     ///   out of place.
     fn skip_to_next_header(&mut self) -> Result<(), ErrorKind> {
-        // Set it to `None` first, in case of error. If we actually do
-        // find a header, we can set it to `Some` again.
+        // Poison `self` pre-emptively.
         self.next_header = None;
+        // Iterate over lines and interpret them. Any error is returned
+        // immediately, leaving a `None` in `next_header`.
         while let Some(line) = self.next_line() {
             match line?.parse::<InputLine>()? {
                 InputLine::Comment => {},
                 InputLine::Header(header) => {
+                    // We are successful and can set `next_header` back
+                    // to a valid value.
                     self.next_header = Some(header);
                     return Ok(());
                 },
@@ -132,16 +139,24 @@ impl<'a, F: BufRead> ScenariosIter<'a, F> {
     /// * `io::Error` if a line cannot be read.
     /// * `inputline::SyntaxError` if a line cannot be interpreted.
     fn read_next_section(&mut self) -> Result<Option<Scenario>, ErrorKind> {
-        // Calling take ensures that any error immediately exhausts the
-        // entire iterator by leaving `None` in `next_header`.
+        // We apply a similar strategy as in `skip_to_next_header`.
+        // The `take()` method leaves a `None` in `next_header`. This
+        // way, if an error occurs, the iterator will think it is
+        // exhausted and yield no further items.
         let mut result = match self.next_header.take() {
+            // There was a header, start a new scenario.
             Some(header) => Scenario::new(header)?,
+            // There was no header, we are exhausted.
             None => return Ok(None),
         };
+        // Iterate over lines and interpret them.
         while let Some(line) = self.next_line() {
             match line?.parse::<InputLine>()? {
                 InputLine::Comment => {},
                 InputLine::Header(name) => {
+                    // We found the next header. We save it (thus
+                    // "unpoisoning" the iterator) and break out of the
+                    // loop.
                     self.next_header = Some(name);
                     break;
                 },
@@ -164,10 +179,10 @@ impl<'a, F: BufRead> Iterator for ScenariosIter<'a, F> {
     type Item = Result<Scenario, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.read_next_section() {
-            Ok(Some(result)) => Some(Ok(result)),
+        match self.read_next_section().context(self.location) {
             Ok(None) => None,
-            Err(err) => Some(Err(ParseError::new(self.location, err))),
+            Ok(Some(scenario)) => Some(Ok(scenario)),
+            Err(context) => Some(Err(ParseError::from(context))),
         }
     }
 }
@@ -220,6 +235,44 @@ impl ParseError {
     }
 }
 
+/// Build a `ParseError` from an `ErrorKind` in a `Context`.
+///
+/// This uses the *context* mechanism of `quick_error`. Given a value
+/// of type `Result<_, ErrorKind>`, we can supply it with a `Context`.
+/// This context is an `ErrorLocation`, i.e. a file name and line
+/// number. These can be put together in an automatic way to build a
+/// proper `ParseError`.
+///
+/// # Example
+///
+/// ```rust
+/// use scenarios::location::ErrorLocation;
+/// use scenarios::scenario_file::{ParseError, ErrorKind};
+/// use quick_error::ResultExt;
+///
+/// let lines = vec!["a", "b", "c"];
+/// let err = returns_parse_error(lines).unwrap_err();
+/// assert_eq!(err.lineno(), Some(2));
+///
+/// fn returns_parse_error<I>(lines: I) -> Result<(), ParseError>
+/// where
+///     I: Iterator<Item = str>
+/// {
+///     let location = ErrorLocation::new("file");
+///     for line in lines {
+///         location.lineno += 1;
+///         fails_on_b(&line).context(location)?;
+///     }
+/// }
+///
+/// fn fails_on_b(line: &str) -> Result<(), ErrorKind> {
+///     if line != "b" {
+///         Ok(())
+///     } else {
+///         Err(ErrorKind::UnexpectedVardef(line.into())
+///     }
+/// }
+/// ```
 impl<'a, S, E> From<Context<ErrorLocation<&'a S>, E>> for ParseError
 where
     String: Borrow<S>,
