@@ -173,16 +173,16 @@ quick_error! {
     #[derive(Debug)]
     pub enum ScenarioError {
         InvalidName(name: String) {
-            description("the scenario name is invalid")
-            display(err) -> ("{}: {}", err.description(), name)
+            description("invalid scenario name")
+            display(err) -> ("{}: \"{}\"", err.description(), name)
         }
         InvalidVariable(name: String) {
-            description("the variable name is invalid")
-            display(err) -> ("{}: {}", err.description(), name)
+            description("invalid variable name")
+            display(err) -> ("{}: \"{}\"", err.description(), name)
         }
         DuplicateVariable(name: String) {
-            description("variable already exists")
-            display(err) -> ("{}: {}", err.description(), name)
+            description("variable already defined")
+            display(err) -> ("{}: \"{}\"", err.description(), name)
         }
         StrictMergeFailed{varname: String, left: String, right: String} {
             description("conflicting variable definitions")
@@ -248,6 +248,7 @@ mod tests {
         assert!(s.add_variable("key", "value").is_err());
         // Variable names must be C identifiers.
         assert!(s.add_variable("a key", "value").is_err());
+        assert!(s.add_variable("[key]", "value").is_err());
         // Check that adding occurred.
         assert!(s.has_variable("key"));
         assert!(!s.has_variable("a key"));

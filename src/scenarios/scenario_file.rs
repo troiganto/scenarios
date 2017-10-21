@@ -259,7 +259,7 @@ quick_error! {
         }
         UnexpectedVardef(name: String) {
             description("variable definition before the first header")
-            display(err) -> ("{}: {}", err.description(), name)
+            display(err) -> ("{}: \"{}\"", err.description(), name)
         }
     }
 }
@@ -273,15 +273,21 @@ mod tests {
     use std::io::Cursor;
 
 
-    fn get_scenarios(contents: &str) -> Vec<Scenario> {
-        from_named_buffer(Cursor::new(contents), "<memory>").unwrap()
+    fn get_scenarios(contents: &str) -> Result<Vec<Scenario>, ParseError> {
+        from_named_buffer(Cursor::new(contents), "<memory>")
     }
 
     fn assert_vars(s: &Scenario, variables: &[(&str, &str)]) {
-        let expected_names: HashSet<&str> = variables.iter().map(|&(name, _)| name).collect();
-        let actual_names: HashSet<&str> = s.variable_names().map(String::as_str).collect();
+        // Check first the names for equality.
+        let expected_names = variables
+            .iter()
+            .map(|&(name, _)| name)
+            .collect::<HashSet<_>>();
+        let actual_names = s.variable_names()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
         assert_eq!(expected_names, actual_names);
-
+        // Then check that the values are equal, too.
         for &(name, value) in variables {
             assert_eq!(Some(value), s.get_variable(name));
         }
@@ -290,8 +296,7 @@ mod tests {
 
     #[test]
     fn test_iter_from_file() {
-        let output = get_scenarios(
-            "\
+        let file = r"
             [First Scenario]
             aaaa = 1
             bbbb = 8
@@ -304,8 +309,8 @@ mod tests {
             cdcd= lesscomplicated
 
             [Third Scenario]
-            ",
-        );
+            ";
+        let output = get_scenarios(file).expect("parse failed");
         let mut output = output.iter();
 
         let the_scenario = output.next().unwrap();
@@ -327,24 +332,73 @@ mod tests {
 
 
     #[test]
+    fn test_errors() {
+        let file = "[scenario]\nthe bad line";
+        assert_eq!(
+            get_scenarios(file)
+                .expect_err("no syntax error found")
+                .to_string(),
+            "<memory>:2: could not parse line: \"the bad line\""
+        );
+        let file = r"[scenario]
+        varname = value
+        varname = other value
+        ";
+        assert_eq!(
+            get_scenarios(file)
+                .expect_err("no duplicate definition found")
+                .to_string(),
+            "<memory>:3: variable already defined: \"varname\""
+        );
+        let file = "[scenario]\n[key] = value";
+        assert_eq!(
+            get_scenarios(file)
+                .expect_err("no invalid variable name found")
+                .to_string(),
+            "<memory>:2: invalid variable name: \"[key]\""
+        );
+        let file = r"[scenario]
+        a = b
+        []
+        ";
+        assert_eq!(
+            get_scenarios(file)
+                .expect_err("no invalid scenario name found")
+                .to_string(),
+            "<memory>:3: invalid scenario name: \"\""
+        );
+        let file = r"
+        # second line
+        # third line
+
+        # fifth line
+        a = b
+        ";
+        assert_eq!(
+            get_scenarios(file)
+                .expect_err("no unexpected variable definition found")
+                .to_string(),
+            "<memory>:6: variable definition before the first header: \"a\""
+        );
+    }
+
+    #[test]
     fn test_are_names_unique() {
-        let output = get_scenarios(
-            "\
+        let file = r"
             [first]
             [second]
             [third]
-            ",
-        );
+            ";
+        let output = get_scenarios(file).expect("parse of unique names failed");
         assert!(are_names_unique(&output));
 
-        let output = get_scenarios(
-            "\
+        let file = r"
             [first]
             [second]
             [third]
             [second]
-            ",
-        );
+            ";
+        let output = get_scenarios(file).expect("parse of non-unique names failed");
         assert!(!are_names_unique(&output));
 
     }

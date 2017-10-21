@@ -101,13 +101,13 @@ pub struct SyntaxError(String);
 
 impl Display for SyntaxError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.description(), self.0)
+        write!(f, "{}: \"{}\"", self.description(), self.0)
     }
 }
 
 impl Error for SyntaxError {
     fn description(&self) -> &str {
-        "syntax error"
+        "could not parse line"
     }
 
     fn cause(&self) -> Option<&Error> {
@@ -120,29 +120,14 @@ impl Error for SyntaxError {
 mod tests {
     use super::*;
 
-    fn assert_eq_header(line: &str, expected_header: &str) {
-        assert_eq!(
-            line.parse::<InputLine>().unwrap(),
-            InputLine::Header(expected_header.into())
-        );
-    }
-
-
-    fn assert_eq_vardef(line: &str, expected_var: &str, expected_def: &str) {
-        assert_eq!(
-            line.parse::<InputLine>().unwrap(),
-            InputLine::Definition(expected_var.into(), expected_def.into())
-        );
-    }
-
-
-    fn assert_eq_comment(line: &str) {
-        assert_eq!(line.parse::<InputLine>().unwrap(), InputLine::Comment);
-    }
-
-
     #[test]
     fn test_header() {
+        fn assert_eq_header(line: &str, expected_header: &str) {
+            assert_eq!(
+                line.parse::<InputLine>().unwrap(),
+                InputLine::Header(expected_header.into())
+            );
+        }
         assert_eq_header("[Header]", "Header");
         assert_eq_header(" [  Whitespaced\tHeader  ]\n\n", "Whitespaced\tHeader");
         assert_eq_header("[Header = with = equals]", "Header = with = equals");
@@ -154,6 +139,12 @@ mod tests {
 
     #[test]
     fn test_definition() {
+        fn assert_eq_vardef(line: &str, expected_var: &str, expected_def: &str) {
+            assert_eq!(
+                line.parse::<InputLine>().unwrap(),
+                InputLine::Definition(expected_var.into(), expected_def.into())
+            );
+        }
         assert_eq_vardef("var=def", "var", "def");
         assert_eq_vardef("var = def", "var", "def");
         assert_eq_vardef("   var\n=\ndef\t", "var", "def");
@@ -171,6 +162,9 @@ mod tests {
 
     #[test]
     fn test_comment() {
+        fn assert_eq_comment(line: &str) {
+            assert_eq!(line.parse::<InputLine>().unwrap(), InputLine::Comment);
+        }
         assert_eq_comment("# comment");
         assert_eq_comment("#comment");
         assert_eq_comment("\n\t#comment");
