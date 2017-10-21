@@ -85,7 +85,7 @@ impl<'a, F: BufRead> ScenariosIter<'a, F> {
             next_header: None,
             location: ErrorLocation::new(filename),
         };
-        result.skip_to_next_header()?;
+        result.skip_to_next_header().context(result.location)?;
         Ok(result)
     }
 
@@ -102,25 +102,19 @@ impl<'a, F: BufRead> ScenariosIter<'a, F> {
     /// * `UnexpectedVarDef` if a variable definition is found. Since
     ///   no scenario has been declared yet, any definition would be
     ///   out of place.
-    fn skip_to_next_header(&mut self) -> Result<(), ParseError> {
+    fn skip_to_next_header(&mut self) -> Result<(), ErrorKind> {
         // Set it to `None` first, in case of error. If we actually do
         // find a header, we can set it to `Some` again.
         self.next_header = None;
         while let Some(line) = self.next_line() {
-            let line = line.context(&self.location)?;
-            match line.parse::<InputLine>().context(&self.location)? {
+            match line?.parse::<InputLine>()? {
                 InputLine::Comment => {},
                 InputLine::Header(header) => {
                     self.next_header = Some(header);
                     return Ok(());
                 },
                 InputLine::Definition(varname, _) => {
-                    return Err(
-                        ParseError(
-                            self.location.to_owned(),
-                            ErrorKind::UnexpectedVardef(varname),
-                        ),
-                    );
+                    return Err(ErrorKind::UnexpectedVardef(varname));
                 },
             }
         }
@@ -137,26 +131,22 @@ impl<'a, F: BufRead> ScenariosIter<'a, F> {
     /// # Errors
     /// * `io::Error` if a line cannot be read.
     /// * `inputline::SyntaxError` if a line cannot be interpreted.
-    fn read_next_section(&mut self) -> Result<Option<Scenario>, ParseError> {
+    fn read_next_section(&mut self) -> Result<Option<Scenario>, ErrorKind> {
         // Calling take ensures that any error immediately exhausts the
         // entire iterator by leaving `None` in `next_header`.
-        // TODO: Reporting wrong location here.
         let mut result = match self.next_header.take() {
-            Some(header) => Scenario::new(header).context(&self.location)?,
+            Some(header) => Scenario::new(header)?,
             None => return Ok(None),
         };
         while let Some(line) = self.next_line() {
-            let line = line.context(&self.location)?;
-            match line.parse::<InputLine>().context(&self.location)? {
+            match line?.parse::<InputLine>()? {
                 InputLine::Comment => {},
                 InputLine::Header(name) => {
                     self.next_header = Some(name);
                     break;
                 },
                 InputLine::Definition(name, value) => {
-                    result
-                        .add_variable(name, value)
-                        .context(&self.location)?;
+                    result.add_variable(name, value)?;
                 },
             }
         }
@@ -177,7 +167,7 @@ impl<'a, F: BufRead> Iterator for ScenariosIter<'a, F> {
         match self.read_next_section() {
             Ok(Some(result)) => Some(Ok(result)),
             Ok(None) => None,
-            Err(err) => Some(Err(err)),
+            Err(err) => Some(Err(ParseError(self.location.to_owned(), err))),
         }
     }
 }
@@ -190,13 +180,40 @@ impl<'a, F: BufRead> Iterator for ScenariosIter<'a, F> {
 #[derive(Debug)]
 pub struct ParseError(ErrorLocation<String>, ErrorKind);
 
-impl<'a, 'b: 'a, S, E> From<Context<&'a ErrorLocation<&'b S>, E>> for ParseError
+impl ParseError {
+    /// Returns the name of the file in which the error occurred.
+    pub fn filename(&self) -> &str {
+        &self.0.filename
+    }
+
+    /// Returns the error's line number, if any.
+    ///
+    /// If the error is not associated with a particular line, this
+    /// returns `None`. Otherwise, it returns the line number, starting
+    /// at `1` for the first line.
+    ///
+    /// In short, this never returns `Some(0)`.
+    pub fn lineno(&self) -> Option<usize> {
+        if self.0.lineno != 0 {
+            Some(self.0.lineno)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the kind of error that happened.
+    pub fn kind(&self) -> &ErrorKind {
+        &self.1
+    }
+}
+
+impl<'a, S, E> From<Context<ErrorLocation<&'a S>, E>> for ParseError
 where
     String: Borrow<S>,
     S: ToOwned<Owned=String> + ?Sized,
     E: Into<ErrorKind>,
 {
-    fn from(context: Context<&'a ErrorLocation<&'b S>, E>) -> Self {
+    fn from(context: Context<ErrorLocation<&'a S>, E>) -> Self {
         ParseError(context.0.to_owned(), context.1.into())
     }
 }
