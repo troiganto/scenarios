@@ -10,7 +10,7 @@ use super::scenario::{Scenario, ScenarioError};
 use super::inputline::{InputLine, SyntaxError};
 
 
-// TODO: Document.
+/// Returns `false` if two of the given `scenarios` have the same name.
 pub fn are_names_unique<'a, I>(scenarios: I) -> bool
 where
     I: 'a + IntoIterator<Item = &'a Scenario>,
@@ -20,8 +20,10 @@ where
 }
 
 
-/// I  `path == "-"`, dispatches to `from_named_buffer`, otherwise to
-/// `from_file`.
+/// Like `from_file`, but also handles `path == "-"`.
+///
+/// If `path` equals `"-"`, this reads scenarios from stdin. Otherwise,
+/// it treats `path` like a regular file path and calls `from_file`.
 pub fn from_file_or_stdin<S: Into<String>>(path: S) -> Result<Vec<Scenario>, ParseError> {
     let path = path.into();
     let stdin = io::stdin();
@@ -34,7 +36,8 @@ pub fn from_file_or_stdin<S: Into<String>>(path: S) -> Result<Vec<Scenario>, Par
 
 /// Opens a file and reads scenarios from it.
 ///
-/// If an error occurs, it contains the path of the offending file.
+/// If an error occurs, the error contains the path of the offending
+/// file.
 pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, ParseError> {
     let path = path.into();
     match File::open(&path) {
@@ -44,8 +47,6 @@ pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, ParseError> 
 }
 
 /// Reads scenarios from a given buffered reader.
-///
-/// If an error occurs, it is enriched with the given name.
 pub fn from_named_buffer<F, S>(buffer: F, name: S) -> Result<Vec<Scenario>, ParseError>
 where
     F: BufRead,
@@ -55,7 +56,7 @@ where
 }
 
 
-/// The iterator returned by `Scenario::iter_from_file()`.
+/// An iterator that reads `Scenario`s from a `BufRead` variable.
 #[derive(Debug)]
 struct ScenariosIter<F: BufRead> {
     /// The wrapped iterator of input file lines.
@@ -72,6 +73,8 @@ impl<F: BufRead> ScenariosIter<F> {
     ///
     /// This takes a `BufRead` instance and drops lines until the
     /// first header line has been found.
+    ///
+    /// The `filename` is used only for error messages.
     ///
     /// # Errors
     /// See `scan_to_first_header()` for a description of error modes.
@@ -93,11 +96,11 @@ impl<F: BufRead> ScenariosIter<F> {
     /// `new()`.
     ///
     /// # Errors
-    /// * `ParseError::IoError` if a line cannot be read.
-    /// * `ParseError::SyntaxError` if a line fails to be parsed.
-    /// * `ParseError::UnexpectedVarDef` if a variable definition is
-    ///   found. Since no scenario has been declared yet, any
-    ///   definition would be out of place.
+    /// * `io::Error` if a line cannot be read.
+    /// * `inputline::SyntaxError` if a line cannot be interpreted.
+    /// * `UnexpectedVarDef` if a variable definition is found. Since
+    ///   no scenario has been declared yet, any definition would be
+    ///   out of place.
     fn skip_to_next_header(&mut self) -> Result<(), ParseError> {
         // Set it to `None` first, in case of error. If we actually do
         // find a header, we can set it to `Some` again.
@@ -127,15 +130,12 @@ impl<F: BufRead> ScenariosIter<F> {
     /// Continue parsing the file until the next header line or EOF.
     ///
     /// This function returns the scenario belonging to the current
-    /// header line.
-    ///
-    /// This function is private and merely a convenience helper for
+    /// header line. It is private and merely a convenience helper for
     /// `next()`.
     ///
     /// # Errors
-    ///
-    /// `ParseError::SyntaxError` if a line fails to be parsed as
-    /// header, definition, or comment line.
+    /// * `io::Error` if a line cannot be read.
+    /// * `inputline::SyntaxError` if a line cannot be interpreted.
     fn read_next_section(&mut self) -> Result<Option<Scenario>, ParseError> {
         // Calling take ensures that any error immediately exhausts the
         // entire iterator by leaving `None` in `next_header`.
@@ -182,7 +182,9 @@ impl<F: BufRead> Iterator for ScenariosIter<F> {
 }
 
 
-// TODO: Document. Make more efficient.
+/// Type that wraps together the location to report in case of errors.
+///
+/// It consists of a file or other name, and a line number.
 #[derive(Clone, Debug)]
 struct ErrorLocation(String, usize);
 
@@ -194,6 +196,9 @@ impl Display for ErrorLocation {
 
 
 /// An error that occured while handling a specific file.
+///
+/// It is typically created by taking an `ErrorKind` and supplying it
+/// with some `quick_error::Context`.
 #[derive(Debug)]
 pub struct ParseError(ErrorLocation, ErrorKind);
 
