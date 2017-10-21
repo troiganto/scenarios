@@ -53,10 +53,10 @@ fn main() {
 
 fn try_main(args: &clap::ArgMatches) -> Result<(), GlobalError> {
     // Collect scenario file names.
-    let scenario_files: Vec<Vec<Scenario>> = args.values_of("input")
+    let scenario_files = args.values_of("input")
         .ok_or(GlobalError::NoScenarios)?
         .map(scenarios::from_file_or_stdin)
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<Vec<Vec<Scenario>>, _>>()?;
 
     // Create and configure a scenarios merger.
     let merger = scenarios::Merger::new()

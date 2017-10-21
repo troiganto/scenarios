@@ -1,6 +1,7 @@
 
 mod inputline;
 mod merger;
+mod location;
 mod scenario;
 mod scenario_file;
 

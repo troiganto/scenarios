@@ -3,9 +3,11 @@ use std::fs::File;
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::io::{self, BufRead};
+use std::borrow::{Borrow, ToOwned};
 
 use quick_error::{Context, ResultExt};
 
+use super::location::ErrorLocation;
 use super::scenario::{Scenario, ScenarioError};
 use super::inputline::{InputLine, SyntaxError};
 
@@ -24,10 +26,9 @@ where
 ///
 /// If `path` equals `"-"`, this reads scenarios from stdin. Otherwise,
 /// it treats `path` like a regular file path and calls `from_file`.
-pub fn from_file_or_stdin<S: Into<String>>(path: S) -> Result<Vec<Scenario>, ParseError> {
-    let path = path.into();
+pub fn from_file_or_stdin<S: Borrow<str>>(path: S) -> Result<Vec<Scenario>, ParseError> {
     let stdin = io::stdin();
-    if path == "-" {
+    if path.borrow() == "-" {
         from_named_buffer(stdin.lock(), "<stdin>")
     } else {
         from_file(path)
@@ -38,11 +39,11 @@ pub fn from_file_or_stdin<S: Into<String>>(path: S) -> Result<Vec<Scenario>, Par
 ///
 /// If an error occurs, the error contains the path of the offending
 /// file.
-pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, ParseError> {
-    let path = path.into();
-    match File::open(&path) {
+pub fn from_file<S: Borrow<str>>(path: S) -> Result<Vec<Scenario>, ParseError> {
+    let path = path.borrow();
+    match File::open(path) {
         Ok(file) => from_named_buffer(io::BufReader::new(file), path),
-        Err(err) => Err(ParseError(ErrorLocation(path.clone(), 0), err.into())),
+        Err(err) => Err(ParseError(ErrorLocation::new(path.to_owned()), err.into())),
     }
 }
 
@@ -50,25 +51,25 @@ pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, ParseError> 
 pub fn from_named_buffer<F, S>(buffer: F, name: S) -> Result<Vec<Scenario>, ParseError>
 where
     F: BufRead,
-    S: Into<String>,
+    S: Borrow<str>,
 {
-    ScenariosIter::new(buffer, name.into()).and_then(Iterator::collect)
+    ScenariosIter::new(buffer, name.borrow()).and_then(Iterator::collect)
 }
 
 
 /// An iterator that reads `Scenario`s from a `BufRead` variable.
 #[derive(Debug)]
-struct ScenariosIter<F: BufRead> {
+struct ScenariosIter<'a, F: BufRead> {
     /// The wrapped iterator of input file lines.
     lines: io::Lines<F>,
     /// Intermediate buffer for the next scenario's name.
     next_header: Option<String>,
     /// The current filename and line number, used for error messages.
-    location: ErrorLocation,
+    location: ErrorLocation<&'a str>,
 }
 
 
-impl<F: BufRead> ScenariosIter<F> {
+impl<'a, F: BufRead> ScenariosIter<'a, F> {
     /// Creates a new instance.
     ///
     /// This takes a `BufRead` instance and drops lines until the
@@ -78,11 +79,11 @@ impl<F: BufRead> ScenariosIter<F> {
     ///
     /// # Errors
     /// See `scan_to_first_header()` for a description of error modes.
-    fn new(file: F, filename: String) -> Result<Self, ParseError> {
+    fn new(file: F, filename: &'a str) -> Result<Self, ParseError> {
         let mut result = ScenariosIter {
             lines: file.lines(),
             next_header: None,
-            location: ErrorLocation(filename, 0),
+            location: ErrorLocation::new(filename),
         };
         result.skip_to_next_header()?;
         Ok(result)
@@ -116,7 +117,7 @@ impl<F: BufRead> ScenariosIter<F> {
                 InputLine::Definition(varname, _) => {
                     return Err(
                         ParseError(
-                            self.location.clone(),
+                            self.location.to_owned(),
                             ErrorKind::UnexpectedVardef(varname),
                         ),
                     );
@@ -164,12 +165,12 @@ impl<F: BufRead> ScenariosIter<F> {
 
     /// Fetches the next line and increments the current line counter.
     fn next_line(&mut self) -> Option<io::Result<String>> {
-        self.location.1 += 1;
+        self.location.lineno += 1;
         self.lines.next()
     }
 }
 
-impl<F: BufRead> Iterator for ScenariosIter<F> {
+impl<'a, F: BufRead> Iterator for ScenariosIter<'a, F> {
     type Item = Result<Scenario, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -182,29 +183,21 @@ impl<F: BufRead> Iterator for ScenariosIter<F> {
 }
 
 
-/// Type that wraps together the location to report in case of errors.
-///
-/// It consists of a file or other name, and a line number.
-#[derive(Clone, Debug)]
-struct ErrorLocation(String, usize);
-
-impl Display for ErrorLocation {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}", self.0, self.1)
-    }
-}
-
-
 /// An error that occured while handling a specific file.
 ///
 /// It is typically created by taking an `ErrorKind` and supplying it
 /// with some `quick_error::Context`.
 #[derive(Debug)]
-pub struct ParseError(ErrorLocation, ErrorKind);
+pub struct ParseError(ErrorLocation<String>, ErrorKind);
 
-impl<'a, E: Into<ErrorKind>> From<Context<&'a ErrorLocation, E>> for ParseError {
-    fn from(context: Context<&'a ErrorLocation, E>) -> Self {
-        ParseError(context.0.clone(), context.1.into())
+impl<'a, 'b: 'a, S, E> From<Context<&'a ErrorLocation<&'b S>, E>> for ParseError
+where
+    String: Borrow<S>,
+    S: ToOwned<Owned=String> + ?Sized,
+    E: Into<ErrorKind>,
+{
+    fn from(context: Context<&'a ErrorLocation<&'b S>, E>) -> Self {
+        ParseError(context.0.to_owned(), context.1.into())
     }
 }
 
