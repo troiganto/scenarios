@@ -6,6 +6,8 @@ extern crate regex;
 extern crate num_cpus;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate quick_error;
 
 mod app;
 mod scenarios;
@@ -18,8 +20,6 @@ use std::io;
 use std::time;
 use std::thread;
 use std::num::ParseIntError;
-use std::fmt::{self, Display};
-use std::error::Error as StdError;
 
 use scenarios::Scenario;
 use consumers::commandline::{self, CommandLine};
@@ -51,10 +51,10 @@ fn main() {
 }
 
 
-fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
+fn try_main(args: &clap::ArgMatches) -> Result<(), GlobalError> {
     // Collect scenario file names.
     let scenario_files: Vec<Vec<Scenario>> = args.values_of("input")
-        .ok_or(Error::NoScenarios)?
+        .ok_or(GlobalError::NoScenarios)?
         .map(scenarios::from_file_or_stdin)
         .collect::<Result<_, _>>()?;
 
@@ -81,7 +81,7 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 }
 
 
-fn handle_command_line<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
+fn handle_command_line<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), GlobalError>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
@@ -99,7 +99,7 @@ where
     // Iterate over all scenarios. Because `children` panicks if we
     // drop it while it's still full, we use an anonymous function to
     // let no result escape. TODO: Wait for `catch_expr`.
-    let run_result: Result<(), Error> = (|| {
+    let run_result: Result<(), GlobalError> = (|| {
         for scenario in scenarios {
             let scenario = scenario?;
             let mut waiting_for_token = true;
@@ -137,7 +137,7 @@ where
 }
 
 
-fn handle_printing<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
+fn handle_printing<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), GlobalError>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
@@ -155,13 +155,13 @@ where
 }
 
 
-fn command_line_from_args<'a>(args: &'a clap::ArgMatches) -> Result<CommandLine<'a>, Error> {
+fn command_line_from_args<'a>(args: &'a clap::ArgMatches) -> Result<CommandLine<'a>, GlobalError> {
     // Configure the command line.
     let command_line: Vec<_> = args.values_of("command_line")
-        .ok_or(Error::NoCommandLine)?
+        .ok_or(GlobalError::NoCommandLine)?
         .collect();
     let mut command_line = consumers::CommandLine::new(command_line)
-        .ok_or(Error::NoCommandLine)?;
+        .ok_or(GlobalError::NoCommandLine)?;
     command_line.ignore_env = args.is_present("ignore_env");
     command_line.insert_name_in_args = !args.is_present("no_insert_name");
     command_line.add_scenarios_name = !args.is_present("no_export_name");
@@ -170,100 +170,59 @@ fn command_line_from_args<'a>(args: &'a clap::ArgMatches) -> Result<CommandLine<
 }
 
 
-#[derive(Debug)]
-enum Error {
-    IoError(io::Error),
-    FileParseError(scenarios::FileParseError),
-    ScenarioError(scenarios::ScenarioError),
-    VariableNameError(commandline::VariableNameError),
-    CommandFailed(CommandFailed),
-    ParseIntError(ParseIntError),
-    NoScenarios,
-    NoCommandLine,
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::IoError(ref err) => err.fmt(f),
-            Error::FileParseError(ref err) => err.fmt(f),
-            Error::ScenarioError(ref err) => err.fmt(f),
-            Error::ParseIntError(ref err) => err.fmt(f),
-            Error::VariableNameError(ref err) => err.fmt(f),
-            Error::CommandFailed(ref err) => err.fmt(f),
-            _ => write!(f, "{}", self.description()),
+quick_error! {
+    #[derive(Debug)]
+    enum GlobalError {
+        IoError(err: io::Error) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        ParseError(err: scenarios::ParseError) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        ScenarioError(err: scenarios::ScenarioError) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        VariableNameError(err: commandline::VariableNameError) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        CommandFailed(err: CommandFailed) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        ParseIntError(err: ParseIntError) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        NoScenarios {
+            description("no scenarios provided")
+        }
+        NoCommandLine {
+            description("no command line provided")
         }
     }
 }
 
-impl StdError for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::IoError(ref err) => err.description(),
-            Error::FileParseError(ref err) => err.description(),
-            Error::ScenarioError(ref err) => err.description(),
-            Error::VariableNameError(ref err) => err.description(),
-            Error::CommandFailed(ref err) => err.description(),
-            Error::ParseIntError(ref err) => err.description(),
-            Error::NoScenarios => "no scenarios provided",
-            Error::NoCommandLine => "no command line provided",
-        }
-    }
-
-    fn cause(&self) -> Option<&std::error::Error> {
-        match *self {
-            Error::IoError(ref err) => Some(err),
-            Error::FileParseError(ref err) => Some(err),
-            Error::ScenarioError(ref err) => Some(err),
-            Error::VariableNameError(ref err) => Some(err),
-            Error::CommandFailed(ref err) => Some(err),
-            Error::ParseIntError(ref err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::IoError(err)
-    }
-}
-
-impl From<scenarios::FileParseError> for Error {
-    fn from(err: scenarios::FileParseError) -> Self {
-        Error::FileParseError(err)
-    }
-}
-
-impl From<scenarios::ScenarioError> for Error {
-    fn from(err: scenarios::ScenarioError) -> Self {
-        Error::ScenarioError(err)
-    }
-}
-
-impl From<scenarios::MergeError> for Error {
+impl From<scenarios::MergeError> for GlobalError {
     fn from(err: scenarios::MergeError) -> Self {
         match err {
-            scenarios::MergeError::NoScenarios => Error::NoScenarios,
-            scenarios::MergeError::ScenarioError(err) => Error::ScenarioError(err),
+            scenarios::MergeError::NoScenarios => GlobalError::NoScenarios,
+            scenarios::MergeError::ScenarioError(err) => GlobalError::from(err),
         }
-    }
-}
-
-impl From<commandline::VariableNameError> for Error {
-    fn from(err: commandline::VariableNameError) -> Self {
-        Error::VariableNameError(err)
-    }
-}
-
-impl From<CommandFailed> for Error {
-    fn from(err: CommandFailed) -> Self {
-        Error::CommandFailed(err)
-    }
-}
-
-impl From<ParseIntError> for Error {
-    fn from(err: ParseIntError) -> Self {
-        Error::ParseIntError(err)
     }
 }

@@ -168,65 +168,30 @@ where
 }
 
 
-/// Errors caused during building a scenario.
-#[derive(Debug)]
-pub enum ScenarioError {
-    /// The scenario name is invalid.
-    InvalidName(String),
-    /// The variable name is invalid.
-    InvalidVariable(String),
-    /// A variable of this name has been added before.
-    DuplicateVariable(String),
-    /// Two scenarios to be merged define the same variable.
-    StrictMergeFailed {
-        varname: String,
-        left: String,
-        right: String,
-    },
-}
-
-impl Display for ScenarioError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::ScenarioError::*;
-
-        match *self {
-            InvalidName(ref name) => write!(f, "{}: {:?}", self.description(), name),
-            InvalidVariable(ref name) => write!(f, "{}: {:?}", self.description(), name),
-            DuplicateVariable(ref name) => write!(f, "{}: {:?}", self.description(), name),
-            StrictMergeFailed {
-                ref varname,
-                ref left,
-                ref right,
-            } => {
-                write!(
-                    f,
-                    r#"{}: "{}" defined by scenarios "{}" and "{}""#,
-                    self.description(),
-                    varname,
-                    left,
-                    right
-                )
-            },
+quick_error! {
+    /// Errors caused during building a scenario.
+    #[derive(Debug)]
+    pub enum ScenarioError {
+        InvalidName(name: String) {
+            description("the scenario name is invalid")
+            display(err) -> ("{}: {}", err.description(), name)
+        }
+        InvalidVariable(name: String) {
+            description("the variable name is invalid")
+            display(err) -> ("{}: {}", err.description(), name)
+        }
+        DuplicateVariable(name: String) {
+            description("variable already exists")
+            display(err) -> ("{}: {}", err.description(), name)
+        }
+        StrictMergeFailed{varname: String, left: String, right: String} {
+            description("conflicting variable definitions")
+            display(err) -> ("{}: \"{}\" defined by scenarios \"{}\" and \"{}\"",
+                             err.description(), varname, left, right)
         }
     }
 }
 
-impl Error for ScenarioError {
-    fn description(&self) -> &str {
-        use self::ScenarioError::*;
-
-        match *self {
-            InvalidName(_) => "the scenario name is invalid",
-            InvalidVariable(_) => "the variable name is invalid",
-            DuplicateVariable(_) => "a variable of this name has been added before",
-            StrictMergeFailed { .. } => "conflicting variable definitions",
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        None
-    }
-}
 
 /// Shortens creation of `ScenarioError::StrictMergeFailed` values.
 fn fail_strict_merge(varname: String, left: &str, right: &str) -> ScenarioError {

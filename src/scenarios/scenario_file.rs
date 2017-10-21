@@ -4,10 +4,13 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use std::io::{self, BufRead};
 
+use quick_error::{Context, ResultExt};
+
 use super::scenario::{Scenario, ScenarioError};
 use super::inputline::{InputLine, SyntaxError};
 
 
+// TODO: Document.
 pub fn are_names_unique<'a, I>(scenarios: I) -> bool
 where
     I: 'a + IntoIterator<Item = &'a Scenario>,
@@ -19,7 +22,7 @@ where
 
 /// I  `path == "-"`, dispatches to `from_named_buffer`, otherwise to
 /// `from_file`.
-pub fn from_file_or_stdin<S: Into<String>>(path: S) -> Result<Vec<Scenario>, FileParseError> {
+pub fn from_file_or_stdin<S: Into<String>>(path: S) -> Result<Vec<Scenario>, ParseError> {
     let path = path.into();
     let stdin = io::stdin();
     if path == "-" {
@@ -32,28 +35,23 @@ pub fn from_file_or_stdin<S: Into<String>>(path: S) -> Result<Vec<Scenario>, Fil
 /// Opens a file and reads scenarios from it.
 ///
 /// If an error occurs, it contains the path of the offending file.
-pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, FileParseError> {
+pub fn from_file<S: Into<String>>(path: S) -> Result<Vec<Scenario>, ParseError> {
     let path = path.into();
     match File::open(&path) {
         Ok(file) => from_named_buffer(io::BufReader::new(file), path),
-        Err(err) => Err(FileParseError::new(err, path)),
+        Err(err) => Err(ParseError(ErrorLocation(path.clone(), 0), err.into())),
     }
 }
 
 /// Reads scenarios from a given buffered reader.
 ///
 /// If an error occurs, it is enriched with the given name.
-pub fn from_named_buffer<F, S>(buffer: F, name: S) -> Result<Vec<Scenario>, FileParseError>
+pub fn from_named_buffer<F, S>(buffer: F, name: S) -> Result<Vec<Scenario>, ParseError>
 where
     F: BufRead,
     S: Into<String>,
 {
-    from_buffer(buffer).map_err(|err| err.add_filename(name))
-}
-
-/// Reads scenarios from a buffered reader.
-pub fn from_buffer<F: BufRead>(buffer: F) -> Result<Vec<Scenario>, LineParseError> {
-    ScenariosIter::new(buffer)?.collect()
+    ScenariosIter::new(buffer, name.into()).and_then(Iterator::collect)
 }
 
 
@@ -64,8 +62,8 @@ pub struct ScenariosIter<F: BufRead> {
     lines: io::Lines<F>,
     /// Intermediate buffer for the next scenario's name.
     next_header: Option<String>,
-    /// The current input line number, used for error messages.
-    current_lineno: usize,
+    /// The current filename and line number, used for error messages.
+    location: ErrorLocation,
 }
 
 
@@ -77,15 +75,13 @@ impl<F: BufRead> ScenariosIter<F> {
     ///
     /// # Errors
     /// See `scan_to_first_header()` for a description of error modes.
-    fn new(file: F) -> Result<Self, LineParseError> {
+    fn new(file: F, filename: String) -> Result<Self, ParseError> {
         let mut result = ScenariosIter {
             lines: file.lines(),
             next_header: None,
-            current_lineno: 0,
+            location: ErrorLocation(filename, 0),
         };
-        if let Err(err) = result.skip_to_next_header() {
-            return Err(err.add_lineno(result.current_lineno));
-        }
+        result.skip_to_next_header()?;
         Ok(result)
     }
 
@@ -107,14 +103,20 @@ impl<F: BufRead> ScenariosIter<F> {
         // find a header, we can set it to `Some` again.
         self.next_header = None;
         while let Some(line) = self.next_line() {
-            match line?.parse::<InputLine>()? {
+            let line = line.context(&self.location)?;
+            match line.parse::<InputLine>().context(&self.location)? {
                 InputLine::Comment => {},
                 InputLine::Header(header) => {
                     self.next_header = Some(header);
                     return Ok(());
                 },
                 InputLine::Definition(varname, _) => {
-                    return Err(ParseError::UnexpectedVardef(varname).into());
+                    return Err(
+                        ParseError(
+                            self.location.clone(),
+                            ErrorKind::UnexpectedVardef(varname),
+                        ),
+                    );
                 },
             }
         }
@@ -124,12 +126,11 @@ impl<F: BufRead> ScenariosIter<F> {
 
     /// Continue parsing the file until the next header line or EOF.
     ///
-    /// For simplicity's sake, this function is *passed* the previous
-    /// sections header line instead of taking it itself. It returns
-    /// the scenario belonging to this header line.
+    /// This function returns the scenario belonging to the current
+    /// header line.
     ///
     /// This function is private and merely a convenience helper for
-    /// `<Iter<F> as Iterator>::next()`.
+    /// `next()`.
     ///
     /// # Errors
     ///
@@ -138,19 +139,23 @@ impl<F: BufRead> ScenariosIter<F> {
     fn read_next_section(&mut self) -> Result<Option<Scenario>, ParseError> {
         // Calling take ensures that any error immediately exhausts the
         // entire iterator by leaving `None` in `next_header`.
+        // TODO: Reporting wrong location here.
         let mut result = match self.next_header.take() {
-            Some(header) => Scenario::new(header)?,
+            Some(header) => Scenario::new(header).context(&self.location)?,
             None => return Ok(None),
         };
         while let Some(line) = self.next_line() {
-            match line?.parse::<InputLine>()? {
+            let line = line.context(&self.location)?;
+            match line.parse::<InputLine>().context(&self.location)? {
                 InputLine::Comment => {},
                 InputLine::Header(name) => {
                     self.next_header = Some(name);
                     break;
                 },
                 InputLine::Definition(name, value) => {
-                    result.add_variable(name, value)?;
+                    result
+                        .add_variable(name, value)
+                        .context(&self.location)?;
                 },
             }
         }
@@ -159,195 +164,90 @@ impl<F: BufRead> ScenariosIter<F> {
 
     /// Fetches the next line and increments the current line counter.
     fn next_line(&mut self) -> Option<io::Result<String>> {
-        self.current_lineno += 1;
+        self.location.1 += 1;
         self.lines.next()
     }
 }
 
 impl<F: BufRead> Iterator for ScenariosIter<F> {
-    type Item = Result<Scenario, LineParseError>;
+    type Item = Result<Scenario, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.read_next_section() {
             Ok(Some(result)) => Some(Ok(result)),
             Ok(None) => None,
-            Err(err) => Some(Err(err.add_lineno(self.current_lineno))),
+            Err(err) => Some(Err(err)),
         }
+    }
+}
+
+
+// TODO: Document. Make more efficient.
+#[derive(Clone, Debug)]
+struct ErrorLocation(String, usize);
+
+impl Display for ErrorLocation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.0, self.1)
     }
 }
 
 
 /// An error that occured while handling a specific file.
 #[derive(Debug)]
-pub struct FileParseError {
-    kind: FileParseErrorKind,
-    filename: String,
-}
+pub struct ParseError(ErrorLocation, ErrorKind);
 
-impl FileParseError {
-    /// Create a new error.
-    ///
-    /// The `inner` argument should be either an `std::io::Error` or
-    /// a `LineParseError`.
-    fn new<E, S>(inner: E, filename: S) -> Self
-    where
-        E: Into<FileParseErrorKind>,
-        S: Into<String>,
-    {
-        FileParseError {
-            kind: inner.into(),
-            filename: filename.into(),
-        }
-    }
-}
-
-impl Display for FileParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: ", self.filename)?;
-        match self.kind {
-            FileParseErrorKind::LineParseError(ref err) => err.fmt(f),
-            FileParseErrorKind::IoError(ref err) => err.fmt(f),
-        }
-    }
-}
-
-impl Error for FileParseError {
-    fn description(&self) -> &str {
-        match self.kind {
-            FileParseErrorKind::LineParseError(ref err) => err.description(),
-            FileParseErrorKind::IoError(ref err) => err.description(),
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        match self.kind {
-            FileParseErrorKind::LineParseError(ref err) => Some(err),
-            FileParseErrorKind::IoError(ref err) => Some(err),
-        }
-    }
-}
-
-
-/// Enum of the different kinds of errors wrapped by `FileParseError`.
-#[derive(Debug)]
-enum FileParseErrorKind {
-    LineParseError(LineParseError),
-    IoError(io::Error),
-}
-
-impl From<LineParseError> for FileParseErrorKind {
-    fn from(err: LineParseError) -> Self {
-        FileParseErrorKind::LineParseError(err)
-    }
-}
-
-impl From<io::Error> for FileParseErrorKind {
-    fn from(err: io::Error) -> Self {
-        FileParseErrorKind::IoError(err)
-    }
-}
-
-
-/// A `ParseError` with additional line number information.
-#[derive(Debug)]
-pub struct LineParseError {
-    inner: ParseError,
-    lineno: usize,
-}
-
-impl LineParseError {
-    /// Enrich this error with the file in which it occurred.
-    fn add_filename<S: Into<String>>(self, filename: S) -> FileParseError {
-        FileParseError::new(self, filename)
-    }
-}
-
-impl Display for LineParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "in line {}: ", self.lineno)?;
-        self.inner.fmt(f)
-    }
-}
-
-impl Error for LineParseError {
-    fn description(&self) -> &str {
-        self.inner.description()
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        Some(&self.inner)
-    }
-}
-
-
-/// Any type of error that occurs during parsing of scenario files.
-#[derive(Debug)]
-pub enum ParseError {
-    IoError(io::Error),
-    SyntaxError(SyntaxError),
-    ScenarioError(ScenarioError),
-    UnexpectedVardef(String),
-}
-
-impl ParseError {
-    /// Enrich this error with the line in which it occurred.
-    fn add_lineno(self, lineno: usize) -> LineParseError {
-        LineParseError {
-            inner: self,
-            lineno: lineno,
-        }
+impl<'a, E: Into<ErrorKind>> From<Context<&'a ErrorLocation, E>> for ParseError {
+    fn from(context: Context<&'a ErrorLocation, E>) -> Self {
+        ParseError(context.0.clone(), context.1.into())
     }
 }
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            ParseError::IoError(ref err) => err.fmt(f),
-            ParseError::SyntaxError(ref err) => err.fmt(f),
-            ParseError::ScenarioError(ref err) => err.fmt(f),
-            ParseError::UnexpectedVardef(ref s) => write!(f, "{}: {}", self.description(), s),
-        }
+        write!(f, "{}: {}", self.0, self.1)
     }
 }
 
 impl Error for ParseError {
     fn description(&self) -> &str {
-        match *self {
-            ParseError::IoError(ref err) => err.description(),
-            ParseError::SyntaxError(ref err) => err.description(),
-            ParseError::ScenarioError(ref err) => err.description(),
-            ParseError::UnexpectedVardef(_) => "variable definition before the first header",
-        }
+        self.1.description()
     }
 
     fn cause(&self) -> Option<&Error> {
-        match *self {
-            ParseError::IoError(ref err) => Some(err),
-            ParseError::SyntaxError(ref err) => Some(err),
-            ParseError::ScenarioError(ref err) => Some(err),
-            ParseError::UnexpectedVardef(_) => None,
+        self.1.cause()
+    }
+}
+
+
+quick_error! {
+    /// Any type of error that occurs during parsing of scenario files.
+    #[derive(Debug)]
+    pub enum ErrorKind {
+        IoError(err: io::Error) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        SyntaxError(err: SyntaxError) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        ScenarioError(err: ScenarioError) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        UnexpectedVardef(name: String) {
+            description("variable definition before the first header")
+            display(err) -> ("{}: {}", err.description(), name)
         }
     }
 }
-
-impl From<io::Error> for ParseError {
-    fn from(err: io::Error) -> Self {
-        ParseError::IoError(err)
-    }
-}
-
-impl From<SyntaxError> for ParseError {
-    fn from(err: SyntaxError) -> Self {
-        ParseError::SyntaxError(err)
-    }
-}
-
-impl From<ScenarioError> for ParseError {
-    fn from(err: ScenarioError) -> Self {
-        ParseError::ScenarioError(err)
-    }
-}
-
 
 
 #[cfg(test)]
@@ -359,7 +259,7 @@ mod tests {
 
 
     fn get_scenarios(contents: &str) -> Vec<Scenario> {
-        from_buffer(Cursor::new(contents)).unwrap()
+        from_named_buffer(Cursor::new(contents), "<memory>").unwrap()
     }
 
     fn assert_vars(s: &Scenario, variables: &[(&str, &str)]) {

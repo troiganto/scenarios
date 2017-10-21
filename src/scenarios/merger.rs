@@ -1,7 +1,4 @@
 
-use std::error::Error;
-use std::fmt::{self, Display};
-
 use super::scenario::{Scenario, ScenarioError};
 
 
@@ -174,44 +171,21 @@ impl Default for MergedScenario {
 }
 
 
-/// Error that represents all failing modes of scenario merging.
-#[derive(Debug)]
-pub enum MergeError {
-    /// No scenarios have been merged at all.
-    NoScenarios,
-    /// Scenarios have been merged, but the strict mode was violated.
-    ScenarioError(ScenarioError),
-}
-
-impl Display for MergeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            MergeError::NoScenarios => write!(f, "{}", self.description()),
-            MergeError::ScenarioError(ref err) => err.fmt(f),
+quick_error! {
+    /// Error that represents all failing modes of scenario merging.
+    #[derive(Debug)]
+    pub enum MergeError {
+        /// No scenarios have been merged at all.
+        NoScenarios {
+            description("scenario merge: no scenarios provided")
         }
-    }
-}
-
-impl Error for MergeError {
-    fn description(&self) -> &str {
-        match *self {
-            MergeError::NoScenarios => "scenario merge: no scenarios provided",
-            MergeError::ScenarioError(ref err) => err.description(),
+        /// Scenarios have been merged, but the strict mode was violated.
+        ScenarioError(err: ScenarioError) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
         }
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        if let MergeError::ScenarioError(ref err) = *self {
-            Some(err)
-        } else {
-            None
-        }
-    }
-}
-
-impl From<ScenarioError> for MergeError {
-    fn from(err: ScenarioError) -> Self {
-        MergeError::ScenarioError(err)
     }
 }
 

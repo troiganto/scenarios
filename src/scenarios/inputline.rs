@@ -101,14 +101,15 @@ pub struct SyntaxError(String);
 
 impl Display for SyntaxError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}: {}", self.description(), self.0)
     }
 }
 
 impl Error for SyntaxError {
     fn description(&self) -> &str {
-        "syntax error while parsing a line"
+        "syntax error"
     }
+
     fn cause(&self) -> Option<&Error> {
         None
     }
