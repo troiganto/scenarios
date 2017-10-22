@@ -79,3 +79,35 @@ impl<'a, 'b> Default for Printer<'a, 'b> {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default() {
+        assert_eq!(Printer::default().format("test"), "test\n");
+    }
+
+    #[test]
+    fn test_null() {
+        assert_eq!(Printer::new("", "").format("test"), "");
+    }
+
+    #[test]
+    fn test_complicated_pattern() {
+        assert_eq!(
+            Printer::new("{} middle {}", "").format("edge"),
+            "edge middle edge"
+        );
+    }
+
+    #[test]
+    fn test_broken_pattern() {
+        assert_eq!(
+            Printer::new("{{}} {no} {", "}").format("yes"),
+            "{yes} {no} {}"
+        );
+    }
+}
