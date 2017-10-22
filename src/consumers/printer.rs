@@ -14,14 +14,15 @@ pub struct Printer<'template, 'terminator> {
 }
 
 impl<'template, 'terminator> Printer<'template, 'terminator> {
-    /// Creates a new `Printer` with default values.
+    /// Creates a new `Printer` with given template and terminator.
     ///
-    /// The default values are `PATTERN` (i.e. `"{}"`) for `template`
-    /// and a newline (i.e. `"\n"`) for `terminator`.
-    pub fn new() -> Self {
+    /// The template is the string in which all occurrences of
+    /// `PATTERN` are replaced by the formatted string. To the result
+    /// of this, the terminator is appended.
+    pub fn new(template: &'template str, terminator: &'terminator str) -> Self {
         Printer {
-            template: PATTERN,
-            terminator: "\n",
+            template,
+            terminator,
         }
     }
 
@@ -29,26 +30,16 @@ impl<'template, 'terminator> Printer<'template, 'terminator> {
         self.template
     }
 
-    pub fn set_template<'s: 'template>(&mut self, template: &'s str) {
+    pub fn set_template(&mut self, template: &'template str) {
         self.template = template;
-    }
-
-    pub fn with_template<'s: 'template>(mut self, template: &'s str) -> Self {
-        self.set_template(template);
-        self
     }
 
     pub fn terminator(&self) -> &str {
         self.terminator
     }
 
-    pub fn set_terminator<'s: 'terminator>(&mut self, terminator: &'s str) {
+    pub fn set_terminator(&mut self, terminator: &'terminator str) {
         self.terminator = terminator;
-    }
-
-    pub fn with_terminator<'s: 'terminator>(mut self, terminator: &'s str) -> Self {
-        self.set_terminator(terminator);
-        self
     }
 
     /// Applies the printer to a string.
@@ -77,7 +68,14 @@ impl<'template, 'terminator> Printer<'template, 'terminator> {
 }
 
 impl<'a, 'b> Default for Printer<'a, 'b> {
+    /// Creates a new `Printer` with default values.
+    ///
+    /// The default values are `PATTERN` (i.e. `"{}"`) for `template`
+    /// and a newline (i.e. `"\n"`) for `terminator`.
     fn default() -> Self {
-        Printer::new()
+        Printer {
+            template: PATTERN,
+            terminator: "\n",
+        }
     }
 }

@@ -132,7 +132,7 @@ fn handle_printing<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Globa
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
-    let mut printer = consumers::Printer::new();
+    let mut printer = consumers::Printer::default();
     if args.is_present("print0") {
         printer.set_terminator("\0");
     }

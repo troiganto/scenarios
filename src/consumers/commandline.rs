@@ -138,7 +138,7 @@ where
         // iterate over the args -- otherwise, we can pass them as a
         // whole.
         if self.insert_name_in_args {
-            let mut printer = Printer::new().with_terminator("");
+            let mut printer = Printer::new("", "");
             for arg in args {
                 printer.set_template(arg);
                 cmd.arg(printer.format(name.as_ref()));
