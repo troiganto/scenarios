@@ -159,16 +159,16 @@ fn max_num_tokens_from_args<'a>(args: &'a clap::ArgMatches) -> Result<usize, Glo
 
 fn command_line_from_args<'a>(args: &'a clap::ArgMatches) -> Result<CommandLine<'a>, GlobalError> {
     // Configure the command line.
+    let options = commandline::Options {
+        is_strict: !args.is_present("lax"),
+        ignore_env: args.is_present("ignore_env"),
+        add_scenarios_name: !args.is_present("no_export_name"),
+        insert_name_in_args: !args.is_present("no_insert_name"),
+    };
     let command_line: Vec<_> = args.values_of("command_line")
         .ok_or(GlobalError::NoCommandLine)?
         .collect();
-    let mut command_line = consumers::CommandLine::new(command_line)
-        .ok_or(GlobalError::NoCommandLine)?;
-    command_line.ignore_env = args.is_present("ignore_env");
-    command_line.insert_name_in_args = !args.is_present("no_insert_name");
-    command_line.add_scenarios_name = !args.is_present("no_export_name");
-    command_line.is_strict = !args.is_present("lax");
-    Ok(command_line)
+    consumers::CommandLine::with_options(command_line, options).ok_or(GlobalError::NoCommandLine)
 }
 
 

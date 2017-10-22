@@ -16,6 +16,61 @@ const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
 type Result<T> = ::std::result::Result<T, VariableNameError>;
 
 
+/// A wrapper around the customization flags of a `CommandLine`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Options {
+    /// Start child processes in a clean environment.
+    ///
+    /// If `true`, child processes only receive those environment
+    /// variables that are defined in a scenario.
+    /// If `false`, child processes inherit the environment of this
+    /// process, updated with the variables of their respective
+    /// scenario.
+    ///
+    /// The default is `false`.
+    pub ignore_env: bool,
+    /// Replace "{}" with the scenario name in the command line.
+    ///
+    /// If `true`, use a `Printer` to insert the scenario's name into
+    /// the command line when executing it.
+    /// If `false`, the command line is executed as-is.
+    ///
+    /// The default is `true`.
+    pub insert_name_in_args: bool,
+    /// Define a variable "SCENARIOS_NAME".
+    ///
+    /// If `true`, always define an additional environment variable
+    /// whose name is defined in `SCENARIOS_NAME_NAME`. This variable
+    /// contains the name of the scenario in which the child process is
+    /// being executed.
+    ///
+    /// The default is `true`.
+    pub add_scenarios_name: bool,
+    /// Check for previous definitions of "SCENARIOS_NAME".
+    ///
+    /// If `true`, it is an error to set `add_scenarios_name` to `true`
+    /// *and* supply your own environment variable whose name is equal
+    /// to `SCENARIOS_NAME_NAME`.
+    /// If this is `false` and `add_scenarios_name` is `true`, such a
+    /// variable gets silently overwritten.
+    /// If `add_scenarios_name` is `false`, this has option no effect.
+    ///
+    /// The default is `true`.
+    pub is_strict: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            ignore_env: false,
+            insert_name_in_args: true,
+            add_scenarios_name: true,
+            is_strict: true,
+        }
+    }
+}
+
+
 /// A `Consumer` of `Scenario`s that executes a command line in them.
 ///
 /// The scenario's variable definitions are set as environment
@@ -33,21 +88,8 @@ where
 {
     /// The command line containing the program and its arguments.
     command_line: Buffer,
-    /// If `true`, clear the child process's environment before adding
-    /// the scenario's variable definitions.
-    pub ignore_env: bool,
-    /// If `true`, use a `Printer` to inser the scenario's name into
-    /// the command line when executing it.
-    pub insert_name_in_args: bool,
-    /// If `true`, always define an additional environment variable
-    /// with name `SCENARIOS_NAME_NAME` containing the scenario's name.
-    pub add_scenarios_name: bool,
-    /// If `true`, it is an error to supply your own environment
-    /// variable `SCENARIOS_NAME_NAME` and set `add_scenarios_name` to
-    /// `true`. If this is `false` and `add_scenarios_name` is `true`,
-    /// such a variable gets silently overwritten. If
-    /// `add_scenarios_name` is `false`, this has no effect.
-    pub is_strict: bool,
+    /// Flags to customize the creation of child processes.
+    options: Options,
     /// Phantom data to connect this object's lifetime to that of the
     /// string slices in the backing buffer.
     _lifetime: ::std::marker::PhantomData<&'a ()>,
@@ -67,38 +109,47 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// extern crate scenarios;
-    /// use scenarios::consumers::CommandLine;
+    /// let line = vec!["echo", "-n", "Hello World!"];
+    /// let expected = &line;
+    /// let cl = CommandLine::new(line.clone()).unwrap();
+    /// assert_eq!(cl.command_line(), &line);
     ///
-    /// fn main() {
-    ///      let line = vec!["echo", "-n", "Hello World!"];
-    ///      let expected = &line;
-    ///      let cl = CommandLine::new(line.clone()).unwrap();
-    ///      let actual = cl.command_line();
-    ///      assert_eq!(expected, actual);
-    ///
-    ///      /// The backing buffer must not be empty.
-    ///      let cl = CommandLine::new(Vec::new());
-    ///      assert!(cl.is_none());
-    /// }
+    /// /// The backing buffer must not be empty.
+    /// assert!(CommandLine::new(Vec::new()).is_none());
     /// ```
     pub fn new(command_line: Buffer) -> Option<Self> {
-        if command_line.as_ref().is_empty() {
-            return None;
+        Self::with_options(command_line, Default::default())
+    }
+
+    /// Like `new()`, but allows you to also specify the options.
+    pub fn with_options(command_line: Buffer, options: Options) -> Option<Self> {
+        if !command_line.as_ref().is_empty() {
+            Some(
+                CommandLine {
+                    command_line,
+                    options,
+                    _lifetime: Default::default(),
+                },
+            )
+        } else {
+            None
         }
-        let result = CommandLine {
-            command_line: command_line,
-            ignore_env: false,
-            insert_name_in_args: true,
-            add_scenarios_name: true,
-            is_strict: true,
-            _lifetime: Default::default(),
-        };
-        Some(result)
     }
 
     pub fn command_line(&self) -> &[&'a str] {
         self.command_line.as_ref()
+    }
+
+    pub fn options(&self) -> &Options {
+        &self.options
+    }
+
+    pub fn options_mut(&mut self) -> &mut Options {
+        &mut self.options
+    }
+
+    pub fn set_options(&mut self, options: Options) {
+        self.options = options;
     }
 
     /// Returns the program and its arguments
@@ -137,7 +188,7 @@ where
         // If we want to insert the name into the args, we have to
         // iterate over the args -- otherwise, we can pass them as a
         // whole.
-        if self.insert_name_in_args {
+        if self.options.insert_name_in_args {
             let mut printer = Printer::new("", "");
             for arg in args {
                 printer.set_template(arg);
@@ -147,16 +198,17 @@ where
             cmd.args(args);
         }
         // Set environment variables.
-        if self.ignore_env {
+        if self.options.ignore_env {
             cmd.env_clear();
         }
         for (k, v) in env_vars.into_iter() {
-            if self.add_scenarios_name && self.is_strict && k.as_ref() == SCENARIOS_NAME_NAME {
+            if self.options.add_scenarios_name && self.options.is_strict &&
+               k.as_ref() == SCENARIOS_NAME_NAME {
                 return Err(VariableNameError);
             }
             cmd.env(k, v);
         }
-        if self.add_scenarios_name {
+        if self.options.add_scenarios_name {
             cmd.env(SCENARIOS_NAME_NAME, name);
         }
         Ok(cmd)
