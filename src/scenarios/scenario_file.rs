@@ -376,7 +376,7 @@ mod tests {
 
             [Third Scenario]
             ";
-        let output = get_scenarios(file).expect("parse failed");
+        let output = get_scenarios(file).unwrap();
         let mut output = output.iter();
 
         let the_scenario = output.next().unwrap();
@@ -396,43 +396,58 @@ mod tests {
         assert!(output.next().is_none());
     }
 
-
     #[test]
-    fn test_errors() {
+    fn test_invalid_variable_def() {
+        let expected_message = "<memory>:2: syntax error: missing equals sign \"=\" in variable \
+                                definition: \"the bad line\"";
         let file = "[scenario]\nthe bad line";
         assert_eq!(
-            get_scenarios(file)
-                .expect_err("no syntax error found")
-                .to_string(),
-            "<memory>:2: could not parse line: \"the bad line\""
+            get_scenarios(file).unwrap_err().to_string(),
+            expected_message
         );
+    }
+
+    #[test]
+    fn test_variable_already_defined() {
+        let expected_message = "<memory>:3: variable already defined: \"varname\"";
         let file = r"[scenario]
         varname = value
         varname = other value
         ";
         assert_eq!(
-            get_scenarios(file)
-                .expect_err("no duplicate definition found")
-                .to_string(),
-            "<memory>:3: variable already defined: \"varname\""
+            get_scenarios(file).unwrap_err().to_string(),
+            expected_message
         );
+    }
+
+
+    #[test]
+    fn test_invalid_variable_name() {
+        let expected_message = "<memory>:2: syntax error: text after closing bracket \"]\" of a \
+                                header line: \"[key] = value\"";
         let file = "[scenario]\n[key] = value";
         assert_eq!(
-            get_scenarios(file)
-                .expect_err("no invalid variable name found")
-                .to_string(),
-            "<memory>:2: invalid variable name: \"[key]\""
+            get_scenarios(file).unwrap_err().to_string(),
+            expected_message
         );
+    }
+
+    #[test]
+    fn test_invalid_scenario_name() {
+        let expected_message = "<memory>:3: invalid scenario name: \"\"";
         let file = r"[scenario]
         a = b
         []
         ";
         assert_eq!(
-            get_scenarios(file)
-                .expect_err("no invalid scenario name found")
-                .to_string(),
-            "<memory>:3: invalid scenario name: \"\""
+            get_scenarios(file).unwrap_err().to_string(),
+            expected_message
         );
+    }
+
+    #[test]
+    fn test_unexpected_vardef() {
+        let expected_message = "<memory>:6: variable definition before the first header: \"a\"";
         let file = r"
         # second line
         # third line
@@ -441,30 +456,22 @@ mod tests {
         a = b
         ";
         assert_eq!(
-            get_scenarios(file)
-                .expect_err("no unexpected variable definition found")
-                .to_string(),
-            "<memory>:6: variable definition before the first header: \"a\""
+            get_scenarios(file).unwrap_err().to_string(),
+            expected_message
         );
     }
 
     #[test]
-    fn test_are_names_unique() {
-        let file = r"
-            [first]
-            [second]
-            [third]
-            ";
-        let output = get_scenarios(file).expect("parse of unique names failed");
+    fn test_unique_names() {
+        let file = "[first]\n[second]\n[third]\n";
+        let output = get_scenarios(file).unwrap();
         assert!(are_names_unique(&output));
+    }
 
-        let file = r"
-            [first]
-            [second]
-            [third]
-            [second]
-            ";
-        let output = get_scenarios(file).expect("parse of non-unique names failed");
+    #[test]
+    fn test_non_unique_names() {
+        let file = "[first]\n[second]\n[third]\n[second]";
+        let output = get_scenarios(file).unwrap();
         assert!(!are_names_unique(&output));
 
     }

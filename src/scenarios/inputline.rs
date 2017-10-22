@@ -1,7 +1,6 @@
 
 use std::str::FromStr;
 use std::error::Error;
-use std::fmt::{self, Display};
 
 
 /// Type that defines how each line of an input file is interpreted.
@@ -51,11 +50,11 @@ impl FromStr for InputLine {
         if Self::is_comment(line) {
             Ok(InputLine::Comment)
         } else if let Some(name) = Self::try_parse_header(line) {
-            Ok(InputLine::Header(name.to_owned()))
+            Ok(InputLine::Header(name?.to_owned()))
         } else if let Some((name, value)) = Self::try_parse_definition(line) {
             Ok(InputLine::Definition(name.to_owned(), value.to_owned()))
         } else {
-            Err(SyntaxError(line.to_owned()))
+            Err(SyntaxError::NotAVarDef(line.to_owned()))
         }
     }
 }
@@ -66,52 +65,58 @@ impl InputLine {
         s.is_empty() || s.starts_with('#')
     }
 
-    /// If `s` is a header line, return the contents of the brackets.
+    /// Returns the inside of the brackets if `s` is a header line.
     ///
-    /// If `s` is not a header line, return `None`.
-    fn try_parse_header(s: &str) -> Option<&str> {
-        if s.starts_with('[') && s.ends_with(']') {
-            // Should be safe because '[' and ']' are one byte long
-            // in UTF-8.
-            Some(s[1..s.len() - 1].trim())
-        } else {
-            None
+    /// # Errors
+    /// If `s` is not a header line, this returns `None`.
+    /// If `s` begins with an opening bracket, but doesn't end with a
+    /// closing bracket, this returns `Some(Err(err))`.
+    fn try_parse_header(s: &str) -> Option<Result<&str, SyntaxError>> {
+        if !s.starts_with('[') {
+            return None;
         }
+        if !s.ends_with(']') {
+            let err = if s.find(']').is_none() {
+                SyntaxError::NoClosingBracket(s.to_owned())
+            } else {
+                SyntaxError::TextAfterClosingBracket(s.to_owned())
+            };
+            return Some(Err(err));
+        }
+        // Should be safe because '[' and ']' are one byte long
+        // in UTF-8.
+        let inner = s[1..s.len() - 1].trim();
+        Some(Ok(inner))
     }
 
-    /// If `s` is a definition, return the split contents.
+    /// Returns the variable name and value if `s` is a definition.
     ///
-    /// If `s` is not a header line, return `None`.
+    /// This splits `s` at the first equals sign and trims both sides.
+    /// If `s` is not a header line, this returns `None`.
     fn try_parse_definition(s: &str) -> Option<(&str, &str)> {
-        if let Some(n) = s.find('=') {
-            let (name, value_and_equals) = s.split_at(n);
-            let value = &value_and_equals[1..];
-            Some((name.trim(), value.trim()))
-        } else {
-            None
+        s.find('=')
+            .map(|eqpos| (s[..eqpos].trim(), s[eqpos + 1..].trim()))
+    }
+}
+
+
+quick_error! {
+    /// Error caused by a line not adhering to the syntax described in
+    /// the documentation for `InputLine`.
+    #[derive(Debug)]
+    pub enum SyntaxError {
+        NoClosingBracket(line: String) {
+            description("syntax error: bracket \"[\" not closed in header line")
+            display(err) -> ("{}: \"{}\"", err.description(), line)
         }
-    }
-}
-
-
-/// Error caused by a line not adhering to the syntax described in
-/// the documentation for `InputLine`.
-#[derive(Debug)]
-pub struct SyntaxError(String);
-
-impl Display for SyntaxError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: \"{}\"", self.description(), self.0)
-    }
-}
-
-impl Error for SyntaxError {
-    fn description(&self) -> &str {
-        "could not parse line"
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        None
+        TextAfterClosingBracket(line: String) {
+            description("syntax error: text after closing bracket \"]\" of a header line")
+            display(err) -> ("{}: \"{}\"", err.description(), line)
+        }
+        NotAVarDef(line: String) {
+            description("syntax error: missing equals sign \"=\" in variable definition")
+            display(err) -> ("{}: \"{}\"", err.description(), line)
+        }
     }
 }
 
