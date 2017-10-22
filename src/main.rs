@@ -52,7 +52,8 @@ fn main() {
 
 
 fn try_main(args: &clap::ArgMatches) -> Result<(), GlobalError> {
-    // Collect scenario file names.
+    // Collect scenario file names into a vector of vectors of scenarios.
+    // Each inner vector represents one input file.
     let scenario_files = args.values_of("input")
         .ok_or(GlobalError::NoScenarios)?
         .map(scenarios::from_file_or_stdin)
@@ -67,12 +68,8 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), GlobalError> {
         .with_strict_mode(!args.is_present("lax"));
 
     // Use the merger to get a list of all combinations of scenarios.
-    let combined_scenarios = cartesian::product(&scenario_files).map(
-        |set_of_scenarios| {
-            merger.merge(set_of_scenarios.into_iter())
-        },
-    );
-
+    // Hand these then over to the correct handler.
+    let combined_scenarios = cartesian::product(&scenario_files).map(|set| merger.merge(set));
     if args.is_present("command_line") {
         handle_command_line(combined_scenarios, &args)
     } else {
@@ -88,13 +85,7 @@ where
     // Read the arguments.
     let keep_going = args.is_present("keep_going");
     let command_line = command_line_from_args(args)?;
-    let mut token_stock = if let Some(num) = args.value_of("jobs") {
-        consumers::TokenStock::new(num.parse::<usize>()?)
-    } else if args.is_present("jobs") {
-        consumers::TokenStock::new(num_cpus::get())
-    } else {
-        consumers::TokenStock::new(1)
-    };
+    let mut token_stock = consumers::TokenStock::new(max_num_tokens_from_args(args)?);
     let mut children = consumers::ProcessPool::with_capacity(token_stock.num_remaining());
     // Iterate over all scenarios. Because `children` panicks if we
     // drop it while it's still full, we use an anonymous function to
@@ -152,6 +143,17 @@ where
         printer.print_scenario(&scenario?);
     }
     Ok(())
+}
+
+
+fn max_num_tokens_from_args<'a>(args: &'a clap::ArgMatches) -> Result<usize, GlobalError> {
+    if let Some(num) = args.value_of("jobs") {
+        num.parse::<usize>().map_err(GlobalError::from)
+    } else if args.is_present("jobs") {
+        Ok(num_cpus::get())
+    } else {
+        Ok(1)
+    }
 }
 
 
