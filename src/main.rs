@@ -51,11 +51,11 @@ fn main() {
 }
 
 
-fn try_main(args: &clap::ArgMatches) -> Result<(), GlobalError> {
+fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
     let scenario_files = args.values_of("input")
-        .ok_or(GlobalError::NoScenarios)?
+        .ok_or(Error::NoScenarios)?
         .map(scenarios::from_file_or_stdin)
         .collect::<Result<Vec<Vec<Scenario>>, _>>()?;
 
@@ -78,7 +78,7 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), GlobalError> {
 }
 
 
-fn handle_command_line<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), GlobalError>
+fn handle_command_line<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
@@ -90,7 +90,7 @@ where
     // Iterate over all scenarios. Because `children` panicks if we
     // drop it while it's still full, we use an anonymous function to
     // let no result escape. TODO: Wait for `catch_expr`.
-    let run_result: Result<(), GlobalError> = (|| {
+    let run_result: Result<(), Error> = (|| {
         for scenario in scenarios {
             let scenario = scenario?;
             let mut waiting_for_token = true;
@@ -128,7 +128,7 @@ where
 }
 
 
-fn handle_printing<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), GlobalError>
+fn handle_printing<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
@@ -146,9 +146,9 @@ where
 }
 
 
-fn max_num_tokens_from_args<'a>(args: &'a clap::ArgMatches) -> Result<usize, GlobalError> {
+fn max_num_tokens_from_args<'a>(args: &'a clap::ArgMatches) -> Result<usize, Error> {
     if let Some(num) = args.value_of("jobs") {
-        num.parse::<usize>().map_err(GlobalError::from)
+        num.parse::<usize>().map_err(Error::from)
     } else if args.is_present("jobs") {
         Ok(num_cpus::get())
     } else {
@@ -157,7 +157,7 @@ fn max_num_tokens_from_args<'a>(args: &'a clap::ArgMatches) -> Result<usize, Glo
 }
 
 
-fn command_line_from_args<'a>(args: &'a clap::ArgMatches) -> Result<CommandLine<'a>, GlobalError> {
+fn command_line_from_args<'a>(args: &'a clap::ArgMatches) -> Result<CommandLine<'a>, Error> {
     // Configure the command line.
     let options = commandline::Options {
         is_strict: !args.is_present("lax"),
@@ -174,7 +174,7 @@ fn command_line_from_args<'a>(args: &'a clap::ArgMatches) -> Result<CommandLine<
 
 quick_error! {
     #[derive(Debug)]
-    enum GlobalError {
+    enum Error {
         IoError(err: io::Error) {
             description(err.description())
             display("{}", err)
@@ -220,11 +220,11 @@ quick_error! {
     }
 }
 
-impl From<scenarios::MergeError> for GlobalError {
+impl From<scenarios::MergeError> for Error {
     fn from(err: scenarios::MergeError) -> Self {
         match err {
-            scenarios::MergeError::NoScenarios => GlobalError::NoScenarios,
-            scenarios::MergeError::ScenarioError(err) => GlobalError::from(err),
+            scenarios::MergeError::NoScenarios => Error::NoScenarios,
+            scenarios::MergeError::ScenarioError(err) => Error::from(err),
         }
     }
 }
