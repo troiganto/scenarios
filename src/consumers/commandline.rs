@@ -60,6 +60,7 @@ pub struct Options {
 }
 
 impl Default for Options {
+    /// Creates an `Options` value with defaults as specified above.
     fn default() -> Self {
         Self {
             ignore_env: false,
@@ -73,110 +74,110 @@ impl Default for Options {
 
 /// A `Consumer` of `Scenario`s that executes a command line in them.
 ///
-/// The scenario's variable definitions are set as environment
-/// variables of the command line. The scenario's name can either be
-/// inserted into the command line itself or set as an additional
-/// environment variable.
+/// This uses the variable definitions in a scenario to define
+/// environment variables. In this environment, the specified command
+/// line is executed. The scenario's name can be inserted into the
+/// command line (by replacing all occurrences of `"{}"` with it) and
+/// defined as an additional environment variable called
+/// `SCENARIOS_NAME`.
 ///
-/// `CommandLine` is generic over the backing buffer that contains the
-/// command line. The only condition is that it can be cast via `AsRef`
-/// to a slice of string slices (`&[&str]`). By default, a `Vec` is
-/// used.
-pub struct CommandLine<'a, Buffer = Vec<&'a str>>
-where
-    Buffer: AsRef<[&'a str]>,
-{
+/// The exact behavior is customized with `Options`, a set of Boolean
+/// flags.
+///
+/// `CommandLine` is created from an iterator over any `S` that can
+/// give references to `str`. It puts these objects into its own
+/// backing buffer of type `Vec<S>`.
+pub struct CommandLine<S: AsRef<str>> {
     /// The command line containing the program and its arguments.
-    command_line: Buffer,
+    command_line: Vec<S>,
     /// Flags to customize the creation of child processes.
     options: Options,
-    /// Phantom data to connect this object's lifetime to that of the
-    /// string slices in the backing buffer.
-    _lifetime: ::std::marker::PhantomData<&'a ()>,
 }
 
-// FIXME: Improve this interface.
-impl<'a, Buffer> CommandLine<'a, Buffer>
-where
-    Buffer: AsRef<[&'a str]>,
-{
+impl<S: AsRef<str>> CommandLine<S> {
     /// Creates a new instance wrapping a command line.
     ///
-    /// The backing buffer should contain the program to be executed
-    /// as well as all its arguments. The result is `None` if the
-    /// backing buffer is empty, otherwise it is `Some(CommandLine)`.
+    /// The iterator should yield the name of the program to execute as
+    /// well as all its arguments -- in other words, the whole command
+    /// line. This function returns `None` if the iterator does not
+    /// yield a single element, otherwise it is `Some(CommandLine)`.
     ///
     /// # Examples
     ///
     /// ```rust
     /// let line = vec!["echo", "-n", "Hello World!"];
-    /// let expected = &line;
-    /// let cl = CommandLine::new(line.clone()).unwrap();
+    /// let cl = CommandLine::new(line.iter()).unwrap();
     /// assert_eq!(cl.command_line(), &line);
     ///
-    /// /// The backing buffer must not be empty.
+    /// /// The passed command line must not be empty.
     /// assert!(CommandLine::new(Vec::new()).is_none());
     /// ```
-    pub fn new(command_line: Buffer) -> Option<Self> {
+    pub fn new<I>(command_line: I) -> Option<Self>
+    where
+        I: IntoIterator<Item = S>,
+    {
         Self::with_options(command_line, Default::default())
     }
 
     /// Like `new()`, but allows you to also specify the options.
-    pub fn with_options(command_line: Buffer, options: Options) -> Option<Self> {
-        if !command_line.as_ref().is_empty() {
-            Some(
-                CommandLine {
+    pub fn with_options<I>(command_line: I, options: Options) -> Option<Self>
+    where
+        I: IntoIterator<Item = S>,
+    {
+        let command_line = command_line.into_iter().collect::<Vec<_>>();
+        if command_line.is_empty() {
+            None
+        } else {
+            CommandLine {
                     command_line,
                     options,
-                    _lifetime: Default::default(),
-                },
-            )
-        } else {
-            None
+                }
+                .into()
         }
     }
 
-    pub fn command_line(&self) -> &[&'a str] {
-        self.command_line.as_ref()
-    }
-
+    /// Returns a shared reference to this object's `Options`.
     pub fn options(&self) -> &Options {
         &self.options
     }
 
+    /// Returns a mutable reference to this object's `Options`.
     pub fn options_mut(&mut self) -> &mut Options {
         &mut self.options
     }
 
+    /// Replaces this object's `Options` with new `Options`.
     pub fn set_options(&mut self, options: Options) {
         self.options = options;
     }
 
-    /// Returns the program and its arguments
-    ///
-    /// #Panics
-    /// This panics if, for whatever reason, the backing buffer is
-    /// empty. The checks in `CommandLine::new()` should prevent that.
-    pub fn program_args(&self) -> (&'a str, &[&'a str]) {
-        let (&program, args) = self.command_line()
+    /// Returns the full command line wrapped by this object.
+    pub fn command_line(&self) -> &[S] {
+        &self.command_line
+    }
+
+    /// Returns the command line split into program and its arguments.
+    pub fn program_args(&self) -> (&S, &[S]) {
+        self.command_line()
             .split_first()
-            .expect("command line is empty");
-        (program, args)
+            .expect("command line is empty")
     }
 
     /// Prepare an `std::process::Command` from this command line.
     ///
     /// The returned `Command` can be used to spawn a child process.
+    ///
+    /// # Errors
+    /// This fails if strict mode is enabled and the scenario contains
+    /// a variable definition for `SCENARIOS_NAME` even though this
+    /// command line is instructed to add such a variable itself. (See
+    /// documentation of `Options` for more information.)
     pub fn with_scenario(&self, scenario: &Scenario) -> Result<Command> {
         self.create_command(scenario.variables(), scenario.name())
     }
 
-    /// Creates an `std::process::Command` corresponding to this line.
-    ///
-    /// The parameter `env_vars` should be set to the environment
-    /// variables to add before executing the command. The parameter
-    /// `name` is the name of the scenario to execute.
-    pub fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command>
+    /// Internal implementation of `with_scenario`.
+    fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -184,18 +185,18 @@ where
         N: AsRef<str> + AsRef<OsStr>,
     {
         let (program, args) = self.program_args();
-        let mut cmd = Command::new(program);
+        let mut cmd = Command::new(program.as_ref());
         // If we want to insert the name into the args, we have to
         // iterate over the args -- otherwise, we can pass them as a
         // whole.
         if self.options.insert_name_in_args {
             let mut printer = Printer::new("", "");
             for arg in args {
-                printer.set_template(arg);
+                printer.set_template(arg.as_ref());
                 cmd.arg(printer.format(name.as_ref()));
             }
         } else {
-            cmd.args(args);
+            cmd.args(args.iter().map(AsRef::as_ref));
         }
         // Set environment variables.
         if self.options.ignore_env {
@@ -242,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_echo() {
-        let cl = CommandLine::new(["echo", "-n"]).unwrap();
+        let cl = CommandLine::new(["echo", "-n"].iter()).unwrap();
         let env: &[(&str, &str)] = &[];
         cl.create_command(env.into_iter().cloned(), "")
             .expect("CommandLine::create_command failed")
@@ -252,14 +253,14 @@ mod tests {
 
     #[test]
     fn test_insert_name() {
-        let mut cl = CommandLine::new(["echo", "a cool {}!"]).unwrap();
-        cl.insert_name_in_args = true;
+        let mut cl = CommandLine::new(["echo", "a cool {}!"].iter()).unwrap();
+        cl.options_mut().insert_name_in_args = true;
         let env: &[(&str, &str)] = &[];
         let output = cl.create_command(env.into_iter().cloned(), "name")
             .expect("CommandLine::create_command failed")
             .output()
             .expect("Child::output failed");
         let output = String::from_utf8(output.stdout).unwrap();
-        assert_eq!(output, "a cool name!\n".to_owned());
+        assert_eq!(output, "a cool name!\n");
     }
 }
