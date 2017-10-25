@@ -37,11 +37,30 @@ impl Scenario {
     pub fn new<S: Into<String>>(name: S) -> Result<Self, ScenarioError> {
         let name = name.into();
         if name.is_empty() || name.contains('\0') {
-            return Err(ScenarioError::InvalidName(name));
+            Err(ScenarioError::InvalidName(name))
         } else {
-            let variables = HashMap::new();
-            Ok(Scenario { name, variables })
+            Ok(
+                Scenario {
+                    name,
+                    variables: HashMap::new(),
+                },
+            )
         }
+    }
+
+    /// Convenience wrapper around `new()` and `add_variable()`.
+    pub fn with_variables<S1, S2, S3, I>(name: S1, variables: I) -> Result<Self, ScenarioError>
+    where
+        S1: Into<String>,
+        S2: Into<String>,
+        S3: Into<String>,
+        I: IntoIterator<Item = (S2, S3)>,
+    {
+        let mut s = Scenario::new(name)?;
+        for (name, value) in variables {
+            s.add_variable(name, value)?;
+        }
+        Ok(s)
     }
 
     /// Adds another variable definition of the current set.
