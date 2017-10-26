@@ -93,8 +93,8 @@ where
     let run_result: Result<(), Error> = (|| {
         for scenario in scenarios {
             let scenario = scenario?;
-            let mut waiting_for_token = true;
-            while waiting_for_token {
+            // Loop until a token is free and we can start a new child.
+            loop {
                 // Clear out finished children and check for errors.
                 for (exit_status, token) in children.reap() {
                     token_stock.return_token(token);
@@ -105,9 +105,9 @@ where
                 // If there are free tokens, we take one and start a new process.
                 // Otherwise, we just wait and try again.
                 if let Some(token) = token_stock.get_token() {
-                    waiting_for_token = false;
-                    let mut command = command_line.with_scenario(&scenario)?;
+                    let mut command = command_line.with_scenario(scenario)?;
                     children.push(command.spawn()?, token);
+                    break;
                 } else {
                     thread::sleep(time::Duration::from_millis(10))
                 }

@@ -178,7 +178,13 @@ impl<S: AsRef<str>> CommandLine<S> {
     /// a variable definition for `SCENARIOS_NAME` even though this
     /// command line is instructed to add such a variable itself. (See
     /// documentation of `Options` for more information.)
-    pub fn with_scenario(&self, scenario: &Scenario) -> Result<Command, VariableNameError> {
+    pub fn with_scenario(&self, scenario: Scenario) -> Result<Command, VariableNameError> {
+        let (name, variables) = scenario.into_parts();
+        self.create_command(variables, name)
+    }
+
+    /// Like `with_scenario`, but does not consume the `Scenario`.
+    pub fn with_scenario_ref(&self, scenario: &Scenario) -> Result<Command, VariableNameError> {
         self.create_command(scenario.variables(), scenario.name())
     }
 
@@ -269,7 +275,7 @@ mod tests {
     fn test_echo() {
         let cl = CommandLine::new(["echo", "-n"].iter()).unwrap();
         let scenario = Scenario::new("name").unwrap();
-        cl.with_scenario(&scenario)
+        cl.with_scenario(scenario)
             .expect("CommandLine::create_command failed")
             .status()
             .expect("Child::status failed");
@@ -280,7 +286,7 @@ mod tests {
         let mut cl = CommandLine::new(["echo", "a cool {}!"].iter()).unwrap();
         cl.options_mut().insert_name_in_args = true;
         let scenario = Scenario::new("name").unwrap();
-        let output = cl.with_scenario(&scenario)
+        let output = cl.with_scenario(scenario)
             .expect("CommandLine::create_command failed")
             .output()
             .expect("Child::output failed");
