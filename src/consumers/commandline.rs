@@ -12,10 +12,6 @@ use super::Printer;
 const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
 
 
-/// Convenience alias for the `Result` type.
-type Result<T> = ::std::result::Result<T, VariableNameError>;
-
-
 /// A wrapper around the customization flags of a `CommandLine`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
@@ -163,6 +159,16 @@ impl<S: AsRef<str>> CommandLine<S> {
             .expect("command line is empty")
     }
 
+    /// Returns the name of the program to execute.
+    pub fn program(&self) -> &S {
+        self.program_args().0
+    }
+
+    /// Returns the arguments that `self.program()` will receive.
+    pub fn args(&self) -> &[S] {
+        self.program_args().1
+    }
+
     /// Prepare an `std::process::Command` from this command line.
     ///
     /// The returned `Command` can be used to spawn a child process.
@@ -172,47 +178,64 @@ impl<S: AsRef<str>> CommandLine<S> {
     /// a variable definition for `SCENARIOS_NAME` even though this
     /// command line is instructed to add such a variable itself. (See
     /// documentation of `Options` for more information.)
-    pub fn with_scenario(&self, scenario: &Scenario) -> Result<Command> {
+    pub fn with_scenario(&self, scenario: &Scenario) -> Result<Command, VariableNameError> {
         self.create_command(scenario.variables(), scenario.name())
     }
 
     /// Internal implementation of `with_scenario`.
-    fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command>
+    fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command, VariableNameError>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
-        N: AsRef<str> + AsRef<OsStr>,
+        N: AsRef<str>,
     {
-        let (program, args) = self.program_args();
-        let mut cmd = Command::new(program.as_ref());
-        // If we want to insert the name into the args, we have to
-        // iterate over the args -- otherwise, we can pass them as a
-        // whole.
+        let mut cmd = Command::new(self.program().as_ref());
+        // Go through each of the options and prepare `cmd` accordingly.
         if self.options.insert_name_in_args {
-            let mut printer = Printer::new_null();
-            for arg in args {
-                printer.set_template(arg.as_ref());
-                cmd.arg(printer.format(name.as_ref()));
-            }
+            self.add_args_formatted(&mut cmd, name.as_ref());
         } else {
-            cmd.args(args.iter().map(AsRef::as_ref));
+            cmd.args(self.args().iter().map(AsRef::as_ref));
         }
-        // Set environment variables.
         if self.options.ignore_env {
             cmd.env_clear();
         }
+        if self.options.add_scenarios_name && self.options.is_strict {
+            Self::add_vars_checked(&mut cmd, env_vars)?;
+        } else {
+            cmd.envs(env_vars);
+        }
+        if self.options.add_scenarios_name {
+            cmd.env(SCENARIOS_NAME_NAME, name.as_ref());
+        }
+        Ok(cmd)
+    }
+
+    /// Inserts `name` into `self.args()` before adding them to `cmd`.
+    fn add_args_formatted<N: AsRef<str>>(&self, cmd: &mut Command, name: N) {
+        // We treat each argument as a template in which `name` is
+        // inserted before being added to `cmd`.
+        let mut printer = Printer::new_null();
+        for arg in self.args().iter() {
+            printer.set_template(arg.as_ref());
+            cmd.arg(printer.format(name.as_ref()));
+        }
+    }
+
+    /// Checks the name of each variable before adding it to `cmd`.
+    fn add_vars_checked<I, K, V>(cmd: &mut Command, env_vars: I) -> Result<(), VariableNameError>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
         for (k, v) in env_vars.into_iter() {
-            if self.options.add_scenarios_name && self.options.is_strict &&
-               k.as_ref() == SCENARIOS_NAME_NAME {
+            if k.as_ref() == SCENARIOS_NAME_NAME {
                 return Err(VariableNameError);
             }
             cmd.env(k, v);
         }
-        if self.options.add_scenarios_name {
-            cmd.env(SCENARIOS_NAME_NAME, name);
-        }
-        Ok(cmd)
+        Ok(())
     }
 }
 
