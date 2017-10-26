@@ -26,6 +26,15 @@ impl<'template, 'terminator> Printer<'template, 'terminator> {
         }
     }
 
+    /// Creates a new `Printer` that doesn't print anything.
+    ///
+    /// The returned printer has an empty template and an empty
+    /// terminator. This is mostly in cases you want to set these
+    /// values yourself.
+    pub fn new_null() -> Self {
+        Printer::new("", "")
+    }
+
     pub fn template(&self) -> &str {
         self.template
     }
@@ -92,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_null() {
-        assert_eq!(Printer::new("", "").format("test"), "");
+        assert_eq!(Printer::new_null().format("test"), "");
     }
 
     #[test]

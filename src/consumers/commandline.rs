@@ -190,7 +190,7 @@ impl<S: AsRef<str>> CommandLine<S> {
         // iterate over the args -- otherwise, we can pass them as a
         // whole.
         if self.options.insert_name_in_args {
-            let mut printer = Printer::new("", "");
+            let mut printer = Printer::new_null();
             for arg in args {
                 printer.set_template(arg.as_ref());
                 cmd.arg(printer.format(name.as_ref()));
