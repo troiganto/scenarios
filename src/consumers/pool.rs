@@ -1,5 +1,5 @@
 
-use super::children::{RunningChild, FinishedChild};
+use super::children::{self, RunningChild, FinishedChild};
 
 
 /// Tokens returned by `TokenStock`.
@@ -122,10 +122,10 @@ impl ProcessPool {
     /// The returned list contains the `ExitStatus` and `PoolToken` of
     /// all remaining child processes.
     ///
-    /// # Panics
-    /// This panics if any IO error occurs while waiting on a child.
-    pub fn join_all(&mut self) -> Vec<(FinishedChild, PoolToken)> {
-        // TODO: Find a way to avoid panics.
+    /// # Errors
+    /// If waiting on any child fails, its respective entry in the
+    /// vector will contain an `Err` instead of an `Ok`.
+    pub fn join_all(&mut self) -> Vec<<FinishedIter as Iterator>::Item> {
         self.queue
             .drain(..)
             .map(RunningChild::finish)
@@ -165,24 +165,24 @@ impl<'a> FinishedIter<'a> {
 }
 
 impl<'a> Iterator for FinishedIter<'a> {
-    type Item = (FinishedChild, PoolToken);
+    type Item = (children::Result<FinishedChild>, PoolToken);
 
     fn next(&mut self) -> Option<Self::Item> {
         // Iterate until we've traversed the entire vector.
         while self.index < self.queue.len() {
-            // The separate scope limits the borrow of `child` while we
-            // check whether `child` has finished.
-            let is_finished = self.queue[self.index]
-                .is_finished()
-                .expect("waiting failed");
-            // If `child` _is_ finished, we remove it from the queue and
-            // return it. The hole is filled up by the last element of
-            // the vector. We thus leave `index` unchanged.
-            if is_finished {
-                let child = self.queue.swap_remove(self.index);
-                return Some(child.finish());
-            } else {
-                self.index += 1;
+            let is_finished = self.queue[self.index].is_finished();
+            match is_finished {
+                // No matter whether the child is finished or waiting
+                // on it gives an error -- we eject it in both cases.
+                // (Note: This assumes that waiting twice on the same
+                // child gives the same error.)
+                Ok(true) | Err(_) => {
+                    let child = self.queue.swap_remove(self.index);
+                    return Some(child.finish());
+                },
+                Ok(false) => {
+                    self.index += 1;
+                },
             }
         }
         None

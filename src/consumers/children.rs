@@ -1,11 +1,16 @@
 
-use std::error::Error;
+use std::error::Error as StdError;
 use std::fmt::{self, Display};
 use std::io;
 use std::process::{Command, Child, ExitStatus};
 
+use quick_error::{Context, ResultExt};
+
 use super::pool::{PoolToken, TokenStock};
 
+
+/// Convenience alias for `std::result::Result`.
+pub type Result<T> = ::std::result::Result<T, Error>;
 
 /// Wrapper type that combines `std::process::Command` with a name.
 ///
@@ -33,13 +38,14 @@ impl PreparedChild {
     /// Spawning a process can fail. In such a case, this function
     /// returns both the error that occurred, and the passed
     /// `PoolToken`. This ensures that no token is lost.
-    pub fn spawn(mut self, token: PoolToken) -> Result<RunningChild, (io::Error, PoolToken)> {
+    pub fn spawn(
+        mut self,
+        token: PoolToken,
+    ) -> ::std::result::Result<RunningChild, (Error, PoolToken)> {
+        let name = self.name;
         match self.command.spawn() {
-            Ok(child) => {
-                let name = self.name;
-                Ok(RunningChild { name, child, token })
-            },
-            Err(err) => Err((err, token)),
+            Ok(child) => Ok(RunningChild { name, child, token }),
+            Err(err) => Err((Error::with_io_error(name, err), token)),
         }
     }
 
@@ -52,7 +58,7 @@ impl PreparedChild {
         self,
         token: PoolToken,
         stock: &mut TokenStock,
-    ) -> io::Result<RunningChild> {
+    ) -> Result<RunningChild> {
         match self.spawn(token) {
             Ok(child) => Ok(child),
             Err((err, token)) => {
@@ -80,9 +86,11 @@ impl RunningChild {
     /// Waits for this child to finish running.
     ///
     /// # Errors
-    /// Waiting can theoretically fail with an `io::Error`.
-    pub fn wait(&mut self) -> io::Result<()> {
-        self.child.wait().map(|_| ())
+    /// Waiting can theoretically fail. In that case, the name of this
+    /// child is copied into the error type.
+    pub fn wait(&mut self) -> Result<()> {
+        self.child.wait().context(self.name.as_str())?;
+        Ok(())
     }
 
     /// Checks whether this child has finished running.
@@ -92,24 +100,30 @@ impl RunningChild {
     /// still running, this returns `Ok(false)`.
     ///
     /// # Errors
-    /// Waiting can theoretically fail with an `io::Error`.
-    pub fn is_finished(&mut self) -> io::Result<bool> {
-        Ok(self.child.try_wait()?.is_some())
+    /// Waiting can theoretically fail.
+    pub fn is_finished(&mut self) -> Result<bool> {
+        Ok(
+            self.child
+                .try_wait()
+                .context(self.name.as_str())?
+                .is_some(),
+        )
     }
 
     /// Turns the `RunningChild` into a `FinishedChild`.
     ///
     /// This also returns the `PoolToken` that the child had.
     ///
-    /// # Panics
-    /// This panics if waiting on the child fails. If you want to avoid
-    /// this, `wait` for the child before `finish`ing it.
-    pub fn finish(mut self) -> (FinishedChild, PoolToken) {
+    /// # Errors
+    /// Waiting can theoretically fail. The `PoolToken` is returned in
+    /// any case.
+    pub fn finish(mut self) -> (Result<FinishedChild>, PoolToken) {
         let name = self.name;
-        let status = self.child
-            .wait()
-            .expect("waiting on child process failed");
-        (FinishedChild { name, status }, self.token)
+        let result = match self.child.wait() {
+            Ok(status) => Ok(FinishedChild { name, status }),
+            Err(err) => Err(Error::with_io_error(name, err)),
+        };
+        (result, self.token)
     }
 }
 
@@ -133,43 +147,98 @@ impl FinishedChild {
     ///
     /// # Errors
     /// If the child exited with a non-zero exit status or through a
-    /// signal, this returns an error.
-    pub fn into_result(self) -> Result<(), ChildFailed> {
+    /// signal, this returns `Err(Error::ChildFailed(status))`.
+    pub fn into_result(self) -> Result<()> {
         if self.status.success() {
             Ok(())
         } else {
-            let name = self.name;
-            let status = self.status;
-            Err(ChildFailed { name, status })
+            Err(Error::with_exit_status(self.name, self.status))
         }
     }
 }
 
 
-/// The error type used by `FinishedChild::into_result()`.
+/// The error type used by this module.
+///
+/// This type essentially ties a regular error (contained in
+/// `ErrorKind`) together with the name of the child that caused it.
 #[derive(Debug)]
-pub struct ChildFailed {
+pub struct Error {
     name: String,
-    status: ExitStatus,
+    kind: ErrorKind,
 }
 
-impl Display for ChildFailed {
+impl Error {
+    /// Constructor from `io::Error`.
+    fn with_io_error<S: Into<String>>(name: S, err: io::Error) -> Self {
+        Error {
+            name: name.into(),
+            kind: ErrorKind::IoError(err),
+        }
+    }
+
+    /// Constructor from `ExitStatus`.
+    fn with_exit_status<S: Into<String>>(name: S, status: ExitStatus) -> Self {
+        Error {
+            name: name.into(),
+            kind: ErrorKind::ChildFailed(status),
+        }
+    }
+
+    /// Accesses the name of the offending child.
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Accesses the kind of error that occurred.
+    fn kind(&self) -> &ErrorKind {
+        &self.kind
+    }
+}
+
+impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "scenario \"{}\": command returned non-zero {}",
-            self.name,
-            self.status
-        )
+        write!(f, "scenario \"{}\": {}", self.name, self.kind)
     }
 }
 
-impl Error for ChildFailed {
+impl StdError for Error {
     fn description(&self) -> &str {
-        "command returned non-zero exit code"
+        self.kind.description()
     }
 
-    fn cause(&self) -> Option<&Error> {
-        None
+    fn cause(&self) -> Option<&StdError> {
+        self.kind.cause()
+    }
+}
+
+/// Allows conversion from `ErrorKind` to `Error` in a `Context`.
+///
+/// This allows you to enrich an `ErrorKind` with the name of the
+/// offending child via `quick_error::ResultExt::context()`.
+impl<S: Into<String>, E: Into<ErrorKind>> From<Context<S, E>> for Error {
+    fn from(context: Context<S, E>) -> Self {
+        let name = context.0.into();
+        let kind = context.1.into();
+        Error { name, kind }
+    }
+}
+
+
+quick_error! {
+    /// The kinds of errors that can be caused in this module.
+    #[derive(Debug)]
+    pub enum ErrorKind {
+        IoError(err: io::Error) {
+            description(err.description())
+            display("{}", err)
+            cause(err)
+            from()
+        }
+        ChildFailed(status: ExitStatus) {
+            description("command return non-zero exit status")
+            display("command return non-zero {}", status)
+            from()
+        }
     }
 }

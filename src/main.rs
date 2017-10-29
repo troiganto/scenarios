@@ -22,7 +22,7 @@ use std::num::ParseIntError;
 
 use scenarios::Scenario;
 use consumers::commandline::{self, CommandLine};
-use consumers::children::ChildFailed;
+use consumers::children;
 
 
 fn main() {
@@ -96,6 +96,7 @@ where
             loop {
                 // Clear out finished children and check for errors.
                 for (child, token) in children.reap() {
+                    let child = child?;
                     token_stock.return_token(token);
                     if !keep_going {
                         child.into_result()?;
@@ -105,14 +106,8 @@ where
                 // Otherwise, we just wait and try again.
                 if let Some(token) = token_stock.get_token() {
                     let child = command_line.with_scenario(scenario)?;
-                    match child.spawn_or_return_token(token, &mut token_stock) {
-                        Ok(child) => children.push(child),
-                        Err(err) => {
-                            if !keep_going {
-                                return Err(err.into());
-                            }
-                        },
-                    }
+                    let child = child.spawn_or_return_token(token, &mut token_stock)?;
+                    children.push(child);
                     break;
                 } else {
                     thread::sleep(time::Duration::from_millis(10))
@@ -122,11 +117,18 @@ where
         Ok(())
     })();
     let finished_children = children.join_all();
-    // Here, the pool is empty and we can evaluate all possible errors
-    // (if we want to).
+    // Here, the pool is empty and we can evaluate all possible errors.
+    // Outer I/O errors always get evaluated -- so we drop the tokens
+    // and get to the results.
+    let finished_children: Vec<children::FinishedChild> = finished_children
+        .into_iter()
+        .map(|(result, _)| result)
+        .collect::<Result<_, _>>()?;
+    // Inner ChildFailed errors only get evaluated if `keep_going` is
+    // turned off.
     if !keep_going {
         run_result?;
-        for (child, _) in finished_children {
+        for child in finished_children {
             child.into_result()?;
         }
     }
@@ -203,7 +205,7 @@ quick_error! {
             cause(err)
             from()
         }
-        ChildFailed(err: ChildFailed) {
+        ChildError(err: children::Error) {
             description(err.description())
             display("{}", err)
             cause(err)
