@@ -5,11 +5,16 @@ use std::process::Command;
 use std::fmt::{self, Display};
 
 use scenarios::Scenario;
-use super::Printer;
+use super::printer::Printer;
+use super::children::PreparedChild;
 
 
 /// The name of the environment variable to hold the scenario name.
 const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
+
+
+/// A convenience type for shortening the results in this module.
+type Result<T> = ::std::result::Result<T, VariableNameError>;
 
 
 /// A wrapper around the customization flags of a `CommandLine`.
@@ -178,18 +183,20 @@ impl<S: AsRef<str>> CommandLine<S> {
     /// a variable definition for `SCENARIOS_NAME` even though this
     /// command line is instructed to add such a variable itself. (See
     /// documentation of `Options` for more information.)
-    pub fn with_scenario(&self, scenario: Scenario) -> Result<Command, VariableNameError> {
+    pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild> {
         let (name, variables) = scenario.into_parts();
-        self.create_command(variables, name)
+        let command = self.create_command(variables, &name)?;
+        Ok(PreparedChild::new(name, command))
     }
 
     /// Like `with_scenario`, but does not consume the `Scenario`.
-    pub fn with_scenario_ref(&self, scenario: &Scenario) -> Result<Command, VariableNameError> {
+    pub fn with_scenario_ref(&self, scenario: &Scenario) -> Result<PreparedChild> {
         self.create_command(scenario.variables(), scenario.name())
+            .map(|command| PreparedChild::new(scenario.name().to_owned(), command),)
     }
 
     /// Internal implementation of `with_scenario`.
-    fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command, VariableNameError>
+    fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -229,7 +236,7 @@ impl<S: AsRef<str>> CommandLine<S> {
     }
 
     /// Checks the name of each variable before adding it to `cmd`.
-    fn add_vars_checked<I, K, V>(cmd: &mut Command, env_vars: I) -> Result<(), VariableNameError>
+    fn add_vars_checked<I, K, V>(cmd: &mut Command, env_vars: I) -> Result<()>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,

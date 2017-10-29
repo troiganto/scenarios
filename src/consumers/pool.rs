@@ -1,5 +1,5 @@
 
-use std::process::{Child, ExitStatus};
+use super::children::{RunningChild, FinishedChild};
 
 
 /// Tokens returned by `TokenStock`.
@@ -84,7 +84,7 @@ impl Default for TokenStock {
 #[derive(Debug, Default)]
 pub struct ProcessPool {
     /// The list of currently running child processes.
-    queue: Vec<(Child, PoolToken)>,
+    queue: Vec<RunningChild>,
 }
 
 impl ProcessPool {
@@ -104,8 +104,8 @@ impl ProcessPool {
     }
 
     /// Adds a new child process to the pool.
-    pub fn push(&mut self, child: Child, token: PoolToken) {
-        self.queue.push((child, token))
+    pub fn push(&mut self, child: RunningChild) {
+        self.queue.push(child)
     }
 
     /// Returns an iterator over all finished child processes.
@@ -124,11 +124,11 @@ impl ProcessPool {
     ///
     /// # Panics
     /// This panics if any IO error occurs while waiting on a child.
-    pub fn join_all(&mut self) -> Vec<(ExitStatus, PoolToken)> {
+    pub fn join_all(&mut self) -> Vec<(FinishedChild, PoolToken)> {
         // TODO: Find a way to avoid panics.
         self.queue
             .drain(..)
-            .map(|(child, token)| (wait_unwrap(child), token))
+            .map(RunningChild::finish)
             .collect()
     }
 }
@@ -149,7 +149,7 @@ impl Drop for ProcessPool {
 /// the result. Thus, any call to `next` can, in theory, panic.
 pub struct FinishedIter<'a> {
     /// The borrowed queue of child processes.
-    queue: &'a mut Vec<(Child, PoolToken)>,
+    queue: &'a mut Vec<RunningChild>,
     /// The current iteration index.
     index: usize,
 }
@@ -165,50 +165,26 @@ impl<'a> FinishedIter<'a> {
 }
 
 impl<'a> Iterator for FinishedIter<'a> {
-    type Item = (ExitStatus, PoolToken);
+    type Item = (FinishedChild, PoolToken);
 
     fn next(&mut self) -> Option<Self::Item> {
         // Iterate until we've traversed the entire vector.
         while self.index < self.queue.len() {
             // The separate scope limits the borrow of `child` while we
             // check whether `child` has finished.
-            let is_finished = {
-                let (ref mut child, _) = self.queue[self.index];
-                is_finished(child)
-            };
+            let is_finished = self.queue[self.index]
+                .is_finished()
+                .expect("waiting failed");
             // If `child` _is_ finished, we remove it from the queue and
             // return it. The hole is filled up by the last element of
             // the vector. We thus leave `index` unchanged.
             if is_finished {
-                let (child, token) = self.queue.swap_remove(self.index);
-                return Some((wait_unwrap(child), token));
+                let child = self.queue.swap_remove(self.index);
+                return Some(child.finish());
             } else {
                 self.index += 1;
             }
         }
         None
     }
-}
-
-
-/// Calls `child.wait()` and unwraps the result.
-///
-/// # Panics
-/// This panics if any IO error occurs while waiting.
-fn wait_unwrap(mut child: Child) -> ExitStatus {
-    child
-        .wait()
-        .expect("I/O error while waiting on child process")
-}
-
-
-/// Returns `true` if the `child` has finished running.
-///
-/// # Panics
-/// This unwraps the result of `child.try_wait` and thus may panic.
-fn is_finished(child: &mut Child) -> bool {
-    child
-        .try_wait()
-        .expect("I/O error while querying child process status")
-        .is_some()
 }

@@ -13,7 +13,6 @@ mod app;
 mod scenarios;
 mod cartesian;
 mod consumers;
-mod intoresult;
 
 
 use std::io;
@@ -23,7 +22,7 @@ use std::num::ParseIntError;
 
 use scenarios::Scenario;
 use consumers::commandline::{self, CommandLine};
-use intoresult::{CommandFailed, IntoResult};
+use consumers::children::ChildFailed;
 
 
 fn main() {
@@ -96,17 +95,24 @@ where
             // Loop until a token is free and we can start a new child.
             loop {
                 // Clear out finished children and check for errors.
-                for (exit_status, token) in children.reap() {
+                for (child, token) in children.reap() {
                     token_stock.return_token(token);
                     if !keep_going {
-                        exit_status.into_result()?;
+                        child.into_result()?;
                     }
                 }
                 // If there are free tokens, we take one and start a new process.
                 // Otherwise, we just wait and try again.
                 if let Some(token) = token_stock.get_token() {
-                    let mut command = command_line.with_scenario(scenario)?;
-                    children.push(command.spawn()?, token);
+                    let child = command_line.with_scenario(scenario)?;
+                    match child.spawn_or_return_token(token, &mut token_stock) {
+                        Ok(child) => children.push(child),
+                        Err(err) => {
+                            if !keep_going {
+                                return Err(err.into());
+                            }
+                        },
+                    }
                     break;
                 } else {
                     thread::sleep(time::Duration::from_millis(10))
@@ -115,13 +121,13 @@ where
         }
         Ok(())
     })();
-    let exit_statuses = children.join_all();
+    let finished_children = children.join_all();
     // Here, the pool is empty and we can evaluate all possible errors
     // (if we want to).
     if !keep_going {
         run_result?;
-        for (exit_status, _) in exit_statuses {
-            exit_status.into_result()?;
+        for (child, _) in finished_children {
+            child.into_result()?;
         }
     }
     Ok(())
@@ -197,7 +203,7 @@ quick_error! {
             cause(err)
             from()
         }
-        CommandFailed(err: CommandFailed) {
+        ChildFailed(err: ChildFailed) {
             description(err.description())
             display("{}", err)
             cause(err)
