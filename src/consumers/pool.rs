@@ -1,6 +1,51 @@
 
+use std::time;
+use std::thread;
+
 use super::children::{self, RunningChild, FinishedChild};
 
+
+/// Waits until there is a free tocken in the stock.
+///
+/// This function keeps trying to get a token from the given
+/// `TokenStock`. If it cannot get one, it waits a little and reaps any
+/// finished children from the given `ProcessPool` to free up tokens,
+/// then tries again.
+///
+/// Whenever a finished child is reaped, the call-back function
+/// `reaper` is called with it as an argument. This allows the caller
+/// to check the freed children for errors before sending them off to
+/// the nirvana. If `reaper` returns `Ok(())`, this function continues
+/// normally. Otherwise, the function aborts and passes the error on.
+/// (The associated token is not lost.)
+///
+/// # Errors
+/// This function returns an error in two cases:
+/// 1. If waiting on any child in the `ProcessPool` fails, this returns
+///    `Err(children::Error::IoError)`;
+/// 2. If `reaper` returns an error, this error is passed through.
+pub fn spin_wait_for_token<F>(
+    stock: &mut TokenStock,
+    children: &mut ProcessPool,
+    mut reaper: F,
+) -> children::Result<PoolToken>
+where
+    F: FnMut(FinishedChild) -> children::Result<()>,
+{
+    loop {
+        // If there are free tokens, just take one.
+        if let Some(token) = stock.get_token() {
+            return Ok(token);
+        }
+        // If not, wait a little (to go easy on the CPU) ...
+        thread::sleep(time::Duration::from_millis(10));
+        // ... and clear out any finished children.
+        for (child, token) in children.reap() {
+            stock.return_token(token);
+            reaper(child?)?;
+        }
+    }
+}
 
 /// Tokens returned by `TokenStock`.
 ///

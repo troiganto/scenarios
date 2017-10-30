@@ -16,13 +16,12 @@ mod consumers;
 
 
 use std::io;
-use std::time;
-use std::thread;
 use std::num::ParseIntError;
 
 use scenarios::Scenario;
 use consumers::commandline::{self, CommandLine};
 use consumers::children;
+use consumers::pool;
 
 
 fn main() {
@@ -90,29 +89,19 @@ where
     // drop it while it's still full, we use an anonymous function to
     // let no result escape. TODO: Wait for `catch_expr`.
     let run_result: Result<(), Error> = (|| {
+        // Our handler for finished child processes.
+        let reaper = |child: children::FinishedChild| if keep_going {
+            Ok(())
+        } else {
+            child.into_result()
+        };
+        // Main loop.
         for scenario in scenarios {
             let scenario = scenario?;
-            // Loop until a token is free and we can start a new child.
-            loop {
-                // Clear out finished children and check for errors.
-                for (child, token) in children.reap() {
-                    let child = child?;
-                    token_stock.return_token(token);
-                    if !keep_going {
-                        child.into_result()?;
-                    }
-                }
-                // If there are free tokens, we take one and start a new process.
-                // Otherwise, we just wait and try again.
-                if let Some(token) = token_stock.get_token() {
-                    let child = command_line.with_scenario(scenario)?;
-                    let child = child.spawn_or_return_token(token, &mut token_stock)?;
-                    children.push(child);
-                    break;
-                } else {
-                    thread::sleep(time::Duration::from_millis(10))
-                }
-            }
+            let token = pool::spin_wait_for_token(&mut token_stock, &mut children, &reaper)?;
+            let child = command_line.with_scenario(scenario)?;
+            let child = child.spawn_or_return_token(token, &mut token_stock)?;
+            children.push(child);
         }
         Ok(())
     })();
