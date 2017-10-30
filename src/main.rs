@@ -85,39 +85,32 @@ where
     let command_line = command_line_from_args(args)?;
     let mut token_stock = consumers::TokenStock::new(max_num_tokens_from_args(args)?);
     let mut children = consumers::ProcessPool::with_capacity(token_stock.num_remaining());
+    // Our handler for finished child processes.
+    let reaper = |child: children::FinishedChild| if keep_going {
+        Ok(())
+    } else {
+        child.into_result()
+    };
     // Iterate over all scenarios. Because `children` panicks if we
     // drop it while it's still full, we use an anonymous function to
     // let no result escape. TODO: Wait for `catch_expr`.
     let run_result: Result<(), Error> = (|| {
-        // Our handler for finished child processes.
-        let reaper = |child: children::FinishedChild| if keep_going {
-            Ok(())
-        } else {
-            child.into_result()
-        };
-        // Main loop.
         for scenario in scenarios {
-            let scenario = scenario?;
             let token = pool::spin_wait_for_token(&mut token_stock, &mut children, &reaper)?;
-            let child = command_line.with_scenario(scenario)?;
+            let child = command_line.with_scenario(scenario?)?;
             let child = child.spawn_or_return_token(token, &mut token_stock)?;
             children.push(child);
         }
         Ok(())
     })();
-    let finished_children = children.join_all();
+    // Reap all remaining children and discard their tokens.
+    let finished_children = children.wait_and_reap_all().map(|(result, _)| result);
     // Here, the pool is empty and we can evaluate all possible errors.
-    // Outer I/O errors always get evaluated -- so we drop the tokens
-    // and get to the results.
-    let finished_children: Vec<children::FinishedChild> = finished_children
-        .into_iter()
-        .map(|(result, _)| result)
-        .collect::<Result<_, _>>()?;
-    // Inner ChildFailed errors only get evaluated if `keep_going` is
-    // turned off.
-    if !keep_going {
-        run_result?;
-        for child in finished_children {
+    // I/O errors always get evaluated, exit statuses only maybe.
+    run_result?;
+    for child in finished_children {
+        let child = child?;
+        if !keep_going {
             child.into_result()?;
         }
     }

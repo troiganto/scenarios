@@ -125,7 +125,8 @@ impl Default for TokenStock {
 ///
 /// As a safety measure, `ProcessPool` also panics if it is dropped
 /// while still containing child processes. You must ensure that the
-/// pool is empty before leaving its scope.
+/// pool is empty before leaving its scope, for example via
+/// `wait_and_reap_all()`.
 #[derive(Debug, Default)]
 pub struct ProcessPool {
     /// The list of currently running child processes.
@@ -164,17 +165,17 @@ impl ProcessPool {
 
     /// Waits for all processes left in the queue to finish.
     ///
-    /// The returned list contains the `ExitStatus` and `PoolToken` of
-    /// all remaining child processes.
+    /// This waits for all remaining children in this pool to finish
+    /// running and only *then* returns an iterator over the resulting
+    /// `FinishedChild`ren. Due to that, it is okay not to exhaust the
+    /// returned iterator; the children will all have exited in any
+    /// case.
     ///
     /// # Errors
     /// If waiting on any child fails, its respective entry in the
     /// vector will contain an `Err` instead of an `Ok`.
-    pub fn join_all(&mut self) -> Vec<<FinishedIter as Iterator>::Item> {
-        self.queue
-            .drain(..)
-            .map(RunningChild::finish)
-            .collect()
+    pub fn wait_and_reap_all(&mut self) -> FinishedIntoIter {
+        FinishedIntoIter::new(self)
     }
 }
 
@@ -189,9 +190,7 @@ impl Drop for ProcessPool {
 
 /// An iterator over the finished child processes in a `ProcessPool`.
 ///
-/// # Panics
-/// The `next` method calls `std::process::Child::try_wait` and unwraps
-/// the result. Thus, any call to `next` can, in theory, panic.
+/// This iterator is returned by `ProcessPool::reap()`.
 pub struct FinishedIter<'a> {
     /// The borrowed queue of child processes.
     queue: &'a mut Vec<RunningChild>,
@@ -231,5 +230,32 @@ impl<'a> Iterator for FinishedIter<'a> {
             }
         }
         None
+    }
+}
+
+
+/// An iterator that finishes all child processes in a `ProcessPool`.
+///
+/// This iterator is returned by `ProcessPool::finish_all()`.
+pub struct FinishedIntoIter<'a>(::std::vec::Drain<'a, RunningChild>);
+
+impl<'a> FinishedIntoIter<'a> {
+    /// Creates a new iterator that drains `pool`'s queue.
+    fn new(pool: &'a mut ProcessPool) -> Self {
+        // Wait for all children now so it's no problem if the caller doesn't
+        // exhaust this iterator.
+        for child in pool.queue.iter_mut() {
+            // Ignore any errors for now, we return them via `next()`.
+            let _ = child.wait();
+        }
+        FinishedIntoIter(pool.queue.drain(..))
+    }
+}
+
+impl<'a> Iterator for FinishedIntoIter<'a> {
+    type Item = (children::Result<FinishedChild>, PoolToken);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(RunningChild::finish)
     }
 }
