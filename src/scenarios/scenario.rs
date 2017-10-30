@@ -4,12 +4,31 @@ use std::error::Error;
 use std::fmt::{self, Display};
 
 
-fn is_alnum_identifier(s: &str) -> bool {
-    use regex::Regex;
-    lazy_static!{
-        static ref RE: Regex = Regex::new("^[_[:alpha:]][[:word:]]*$").unwrap();
+/// Tests if a character is a valid C identifier.
+///
+/// C identifiers contain only the following characters:
+/// * ASCII letters (lowercase or uppercase),
+/// * ASCII digits,
+/// * the ASCII underscore.
+/// Additionally, they must not begin with a digit, and contain at
+/// least one character.
+fn is_c_identifier(s: &str) -> bool {
+    let mut iter = s.as_bytes().iter();
+    let first_byte = match iter.next() {
+        Some(byte) => byte,
+        None => return false,
+    };
+    match *first_byte {
+        b'A'...b'Z' | b'a'...b'z' | b'_' => {},
+        _ => return false,
     }
-    RE.is_match(s)
+    for byte in s.as_bytes().iter() {
+        match *byte {
+            b'A'...b'Z' | b'a'...b'z' | b'0'...b'9' | b'_' => {},
+            _ => return false,
+        }
+    }
+    true
 }
 
 
@@ -79,7 +98,7 @@ impl Scenario {
         let value = value.into();
         if self.has_variable(&name) {
             Err(ScenarioError::DuplicateVariable(name))
-        } else if !is_alnum_identifier(&name) {
+        } else if !is_c_identifier(&name) {
             Err(ScenarioError::InvalidVariable(name))
         } else {
             self.variables.insert(name, value);
@@ -228,19 +247,19 @@ mod tests {
 
 
     #[test]
-    fn test_is_alnum_identifier() {
-        assert!(is_alnum_identifier("_"));
-        assert!(is_alnum_identifier("SomeValue"));
-        assert!(is_alnum_identifier("ALL_CAPS_AND_9"));
-        assert!(is_alnum_identifier("l111"));
-        assert!(is_alnum_identifier("__init__"));
+    fn test_is_c_identifier() {
+        assert!(is_c_identifier("_"));
+        assert!(is_c_identifier("SomeValue"));
+        assert!(is_c_identifier("ALL_CAPS_AND_9"));
+        assert!(is_c_identifier("l111"));
+        assert!(is_c_identifier("__init__"));
 
-        assert!(!is_alnum_identifier(""));
-        assert!(!is_alnum_identifier("some value"));
-        assert!(!is_alnum_identifier("Mörder"));
-        assert!(!is_alnum_identifier("7"));
-        assert!(!is_alnum_identifier("1a"));
-        assert!(!is_alnum_identifier("🍣"));
+        assert!(!is_c_identifier(""));
+        assert!(!is_c_identifier("some value"));
+        assert!(!is_c_identifier("Mörder"));
+        assert!(!is_c_identifier("7"));
+        assert!(!is_c_identifier("1a"));
+        assert!(!is_c_identifier("🍣"));
     }
 
 
