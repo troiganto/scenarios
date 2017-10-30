@@ -5,11 +5,6 @@ authors = ["Nico Madysa <nico.madysa@tu-dresden.de>"]
 description = "Run a command line multiple times in different environments."
 
 [dependencies]
-regex = "*"
 num_cpus = "*"
-lazy_static = "*"
 quick-error = "*"
-
-[dependencies.clap]
-version = "*"
-features = ["wrap_help"]
+clap = { version = "*", features = ["wrap_help"] }

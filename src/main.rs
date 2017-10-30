@@ -2,10 +2,7 @@
 
 #[macro_use]
 extern crate clap;
-extern crate regex;
 extern crate num_cpus;
-#[macro_use]
-extern crate lazy_static;
 #[macro_use]
 extern crate quick_error;
 
