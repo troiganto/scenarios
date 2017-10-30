@@ -76,6 +76,24 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 }
 
 
+fn handle_printing<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
+where
+    I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
+{
+    let mut printer = consumers::Printer::default();
+    if args.is_present("print0") {
+        printer.set_terminator("\0");
+    }
+    if let Some(template) = args.value_of("print0").or(args.value_of("print")) {
+        printer.set_template(template);
+    }
+    for scenario in scenarios {
+        printer.print_scenario(&scenario?);
+    }
+    Ok(())
+}
+
+
 fn handle_command_line<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
@@ -113,24 +131,6 @@ where
         if !keep_going {
             child.into_result()?;
         }
-    }
-    Ok(())
-}
-
-
-fn handle_printing<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
-where
-    I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
-{
-    let mut printer = consumers::Printer::default();
-    if args.is_present("print0") {
-        printer.set_terminator("\0");
-    }
-    if let Some(template) = args.value_of("print0").or(args.value_of("print")) {
-        printer.set_template(template);
-    }
-    for scenario in scenarios {
-        printer.print_scenario(&scenario?);
     }
     Ok(())
 }
