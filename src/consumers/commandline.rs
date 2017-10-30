@@ -275,14 +275,15 @@ impl Error for VariableNameError {
 
 #[cfg(test)]
 mod tests {
-    use scenarios::Scenario;
+    use std::iter;
+
     use super::*;
+
 
     #[test]
     fn test_echo() {
         let cl = CommandLine::new(["echo", "-n"].iter()).unwrap();
-        let scenario = Scenario::new("name").unwrap();
-        cl.with_scenario(scenario)
+        cl.create_command(iter::empty::<(&str, &str)>(), "name")
             .expect("CommandLine::create_command failed")
             .status()
             .expect("Child::status failed");
@@ -292,8 +293,7 @@ mod tests {
     fn test_insert_name() {
         let mut cl = CommandLine::new(["echo", "a cool {}!"].iter()).unwrap();
         cl.options_mut().insert_name_in_args = true;
-        let scenario = Scenario::new("name").unwrap();
-        let output = cl.with_scenario(scenario)
+        let output = cl.create_command(iter::empty::<(&str, &str)>(), "name")
             .expect("CommandLine::create_command failed")
             .output()
             .expect("Child::output failed");
