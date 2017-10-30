@@ -69,14 +69,15 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Hand these then over to the correct handler.
     let combined_scenarios = cartesian::product(&scenario_files).map(|set| merger.merge(set));
     if args.is_present("command_line") {
-        handle_command_line(combined_scenarios, &args)
+        CommandLineHandler::new(&args)?
+            .handle(combined_scenarios)
     } else {
-        handle_printing(combined_scenarios, &args)
+        handle_printing(&args, combined_scenarios)
     }
 }
 
 
-fn handle_printing<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
+fn handle_printing<I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
 {
@@ -94,69 +95,88 @@ where
 }
 
 
-fn handle_command_line<I>(scenarios: I, args: &clap::ArgMatches) -> Result<(), Error>
-where
-    I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
-{
-    // Read the arguments.
-    let keep_going = args.is_present("keep_going");
-    let command_line = command_line_from_args(args)?;
-    let mut token_stock = consumers::TokenStock::new(max_num_tokens_from_args(args)?);
-    let mut children = consumers::ProcessPool::with_capacity(token_stock.num_remaining());
-    // Our handler for finished child processes.
-    let reaper = |child: children::FinishedChild| if keep_going {
+struct CommandLineHandler<'a> {
+    keep_going: bool,
+    command_line: consumers::CommandLine<&'a str>,
+    tokens: consumers::TokenStock,
+    children: consumers::ProcessPool,
+}
+
+impl<'a> CommandLineHandler<'a> {
+    pub fn new(args: &'a clap::ArgMatches) -> Result<Self, Error> {
+        let handler = CommandLineHandler {
+            keep_going: args.is_present("keep_going"),
+            command_line: Self::command_line_from_args(args)?,
+            tokens: consumers::TokenStock::new(Self::max_num_tokens_from_args(args)?),
+            children: consumers::ProcessPool::new(),
+        };
+        Ok(handler)
+    }
+
+    fn command_line_from_args(args: &'a clap::ArgMatches) -> Result<CommandLine<&'a str>, Error> {
+        let options = commandline::Options {
+            is_strict: !args.is_present("lax"),
+            ignore_env: args.is_present("ignore_env"),
+            add_scenarios_name: !args.is_present("no_export_name"),
+            insert_name_in_args: !args.is_present("no_insert_name"),
+        };
+        args.values_of("command_line")
+            .and_then(|argv| consumers::CommandLine::with_options(argv, options))
+            .ok_or(Error::NoCommandLine)
+    }
+
+    fn max_num_tokens_from_args(args: &clap::ArgMatches) -> Result<usize, Error> {
+        if let Some(num) = args.value_of("jobs") {
+            num.parse::<usize>().map_err(Error::from)
+        } else if args.is_present("jobs") {
+            Ok(num_cpus::get())
+        } else {
+            Ok(1)
+        }
+    }
+
+    pub fn handle<I>(&mut self, scenarios: I) -> Result<(), Error>
+    where
+        I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
+    {
+        let run_result = self.inner_loop(scenarios);
+        // Reap all remaining children.
+        let finished_children = self.children.wait_and_reap_all();
+        // Here, the pool is empty and we can evaluate all possible errors.
+        // I/O errors always get evaluated, exit statuses only maybe.
+        run_result?;
+        for (child, _token) in finished_children {
+            let child = child?;
+            if !self.keep_going {
+                child.into_result()?;
+            }
+        }
         Ok(())
-    } else {
-        child.into_result()
-    };
-    // Iterate over all scenarios. Because `children` panicks if we
-    // drop it while it's still full, we use an anonymous function to
-    // let no result escape. TODO: Wait for `catch_expr`.
-    let run_result: Result<(), Error> = (|| {
+    }
+
+    fn inner_loop<I>(&mut self, scenarios: I) -> Result<(), Error>
+    where
+        I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
+    {
+        // Copy `keep_going` to avoid borrowing `self` to the closure.
+        let keep_going = self.keep_going;
+        let reaper = |child: children::FinishedChild| if keep_going {
+            Ok(())
+        } else {
+            child.into_result()
+        };
+        // Iterate over all scenarios. Because `children` panicks if we
+        // drop it while it's still full, we use an anonymous function to
+        // let no result escape. TODO: Wait for `catch_expr`.
         for scenario in scenarios {
-            let token = pool::spin_wait_for_token(&mut token_stock, &mut children, &reaper)?;
-            let child = command_line.with_scenario(scenario?)?;
-            let child = child.spawn_or_return_token(token, &mut token_stock)?;
-            children.push(child);
+            let token = pool::spin_wait_for_token(&mut self.tokens, &mut self.children, &reaper)?;
+            let child = self.command_line
+                .with_scenario(scenario?)?
+                .spawn_or_return_token(token, &mut self.tokens)?;
+            self.children.push(child);
         }
         Ok(())
-    })();
-    // Reap all remaining children and discard their tokens.
-    let finished_children = children.wait_and_reap_all().map(|(result, _)| result);
-    // Here, the pool is empty and we can evaluate all possible errors.
-    // I/O errors always get evaluated, exit statuses only maybe.
-    run_result?;
-    for child in finished_children {
-        let child = child?;
-        if !keep_going {
-            child.into_result()?;
-        }
     }
-    Ok(())
-}
-
-
-fn max_num_tokens_from_args<'a>(args: &'a clap::ArgMatches) -> Result<usize, Error> {
-    if let Some(num) = args.value_of("jobs") {
-        num.parse::<usize>().map_err(Error::from)
-    } else if args.is_present("jobs") {
-        Ok(num_cpus::get())
-    } else {
-        Ok(1)
-    }
-}
-
-
-fn command_line_from_args<'a>(args: &'a clap::ArgMatches) -> Result<CommandLine<&'a str>, Error> {
-    let options = commandline::Options {
-        is_strict: !args.is_present("lax"),
-        ignore_env: args.is_present("ignore_env"),
-        add_scenarios_name: !args.is_present("no_export_name"),
-        insert_name_in_args: !args.is_present("no_insert_name"),
-    };
-    args.values_of("command_line")
-        .and_then(|argv| consumers::CommandLine::with_options(argv, options))
-        .ok_or(Error::NoCommandLine)
 }
 
 
