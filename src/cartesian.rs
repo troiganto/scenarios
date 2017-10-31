@@ -1,15 +1,6 @@
 //! Module that provides the function `cartesian::product()`. The
 //! name has been chosen entirely for this combination.
 
-/// Iterator over the Cartesian product of some sub-iterators.
-pub struct Product<'a, C: 'a, T: 'a>
-where
-    &'a C: IntoIterator<Item = &'a T>,
-{
-    collections: &'a [C],
-    iterators: Vec<<&'a C as IntoIterator>::IntoIter>,
-    next_item: Vec<Option<&'a T>>,
-}
 
 /// Iterates over Cartesian product of a list of containers.
 ///
@@ -80,6 +71,43 @@ where
     product
 }
 
+
+/// Iterator over the Cartesian product of some sub-iterators.
+pub struct Product<'a, C: 'a, T: 'a>
+where
+    &'a C: IntoIterator<Item = &'a T>,
+{
+    collections: &'a [C],
+    iterators: Vec<<&'a C as IntoIterator>::IntoIter>,
+    next_item: Vec<Option<&'a T>>,
+}
+
+impl<'a, C, T> Iterator for Product<'a, C, T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
+{
+    type Item = Vec<&'a T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_item.iter().any(Option::is_none) {
+            // If any element is None, it means at least one of the
+            // sub-iterators is exhausted and this iterator is
+            // exhausted as a whole. We are done then.
+            None
+        } else {
+            // None of the elements is `None`, this means we can simply
+            // unwrap them.
+            let next_item = self.next_item
+                .iter()
+                .cloned()
+                .map(Option::unwrap)
+                .collect();
+            self.advance_iterators();
+            Some(next_item)
+        }
+    }
+}
+
 impl<'a, C, T> Product<'a, C, T>
 where
     &'a C: IntoIterator<Item = &'a T>,
@@ -129,32 +157,6 @@ where
                .expect("next item is never empty")
                .is_some() {
             self.fill_up_next_item();
-        }
-    }
-}
-
-impl<'a, C, T> Iterator for Product<'a, C, T>
-where
-    &'a C: IntoIterator<Item = &'a T>,
-{
-    type Item = Vec<&'a T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.next_item.iter().any(Option::is_none) {
-            // If any element is None, it means at least one of the
-            // sub-iterators is exhausted and this iterator is
-            // exhausted as a whole. We are done then.
-            None
-        } else {
-            // None of the elements is `None`, this means we can simply
-            // unwrap them.
-            let next_item = self.next_item
-                .iter()
-                .cloned()
-                .map(Option::unwrap)
-                .collect();
-            self.advance_iterators();
-            Some(next_item)
         }
     }
 }
