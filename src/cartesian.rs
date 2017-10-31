@@ -186,10 +186,16 @@ mod tests {
         }
 
         #[test]
-        fn test_empty() {
+        fn test_empty_vector() {
             let one_is_empty = [vec![0; 3], vec![0; 3], vec![0; 0]];
             let empty_product: Vec<_> = cartesian::product(&one_is_empty).collect();
             assert_eq!(empty_product.len(), 0);
+        }
+
+        #[test]
+        fn test_empty_product() {
+            let empty: [[u32; 1]; 0] = [];
+            assert!(cartesian::product(&empty).next().is_none());
         }
     }
 
