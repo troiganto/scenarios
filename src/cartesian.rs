@@ -2,7 +2,7 @@
 //! name has been chosen entirely for this combination.
 
 
-/// Iterates over Cartesian product of a list of containers.
+/// Iterates over the Cartesian product of a list of containers.
 ///
 /// This essentially does the same as the macro `itertools::iproduct`,
 /// but the number of arguments may be decided at run-time.
@@ -16,7 +16,7 @@
 /// (over `&T`). This is necessary because `product()` needs to iterate
 /// over these containers multiple times, so calling `into_iter` must
 /// not consume the passed containers. Finally, the lifetime `'a` ties
-/// all the used references to the reference originally passed to
+/// all the used references to the sclice originally passed to
 /// `product()`.
 ///
 /// # Example
@@ -51,23 +51,19 @@ pub fn product<'a, C: 'a, T: 'a>(collections: &'a [C]) -> Product<'a, C, T>
 where
     &'a C: IntoIterator<Item = &'a T>,
 {
-    // Create an unitialized object.
-    // we have to fill `iterators` and `next_item`.
-    let len = collections.len();
+    // We start with fresh iterators and a `next_item` full of `None`s.
+    let iterators = collections
+        .iter()
+        .map(IntoIterator::into_iter)
+        .collect();
+    let next_item = vec![None; collections.len()];
     let mut product = Product {
-        collections: collections,
-        iterators: Vec::with_capacity(len),
-        next_item: ::std::iter::repeat(None).take(len).collect(),
+        collections,
+        iterators,
+        next_item,
     };
-
-    // Create one brand-new iterator per collection.
-    for collection in product.collections {
-        product.iterators.push(collection.into_iter());
-    }
-
-    // Fill `next_item`, which is full of Nones until now.
+    // Fill `next_item`, to finish initialization.
     product.fill_up_next_item();
-
     product
 }
 
