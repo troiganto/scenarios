@@ -160,75 +160,84 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::super::cartesian;
+    mod lengths {
+        use cartesian;
 
-    fn assert_length<T>(vectors: &Vec<Vec<T>>) {
-        let expected_len: usize = vectors.iter().map(Vec::len).product();
-        let actual_len: usize = cartesian::product(vectors)
-            .collect::<Vec<Vec<&T>>>()
-            .len();
-        assert_eq!(expected_len, actual_len);
+        /// Asserts that the `len(V1×V2×...VN) ==
+        /// len(V1)×len(V2)×...len(VN)`.
+        fn assert_length<T>(vectors: &Vec<Vec<T>>) {
+            let expected_len: usize = vectors.iter().map(Vec::len).product();
+            let actual_len: usize = cartesian::product(vectors)
+                .collect::<Vec<Vec<&T>>>()
+                .len();
+            assert_eq!(expected_len, actual_len);
+        }
+
+        #[test]
+        fn test_length() {
+            let vectors = vec![vec![1, 1, 1, 1], vec![2, 2, 2, 2], vec![3, 3, 3, 3]];
+            assert_length(&vectors);
+        }
+
+        #[test]
+        fn test_unequal_length() {
+            let vectors = vec![vec![1, 1], vec![2, 2, 2, 2], vec![3]];
+            assert_length(&vectors);
+        }
+
+        #[test]
+        fn test_empty() {
+            let one_is_empty = [vec![0; 3], vec![0; 3], vec![0; 0]];
+            let empty_product: Vec<_> = cartesian::product(&one_is_empty).collect();
+            assert_eq!(empty_product.len(), 0);
+        }
     }
 
-    #[test]
-    fn test_len() {
-        let vectors = vec![vec![1, 1, 1, 1], vec![2, 2, 2, 2], vec![3, 3, 3, 3]];
-        assert_length(&vectors);
-    }
 
-    #[test]
-    fn test_unequal_length() {
-        let vectors = vec![vec![1, 1], vec![2, 2, 2, 2], vec![3]];
-        assert_length(&vectors);
-    }
+    mod types {
+        use cartesian;
 
-    #[test]
-    fn test_empty() {
-        let one_is_empty = [vec![0; 3], vec![0; 3], vec![0; 0]];
-        let empty_product: Vec<_> = cartesian::product(&one_is_empty).collect();
-        assert_eq!(empty_product.len(), 0);
-    }
+        #[test]
+        fn test_i32() {
+            let numbers = [[0, 16, 32, 48], [0, 4, 8, 12], [0, 1, 2, 3]];
+            let expected: Vec<u32> = (0..64).collect();
+            let actual: Vec<u32> = cartesian::product(&numbers)
+                .map(Vec::into_iter)
+                .map(Iterator::sum)
+                .collect();
+            assert_eq!(expected, actual);
+        }
 
-    #[test]
-    fn test_i32() {
-        let numbers: Vec<Vec<u32>> = vec![vec![0, 16, 32, 48], vec![0, 4, 8, 12], vec![0, 1, 2, 3]];
-        let expected: Vec<u32> = (0..64).collect();
-        let actual: Vec<u32> = cartesian::product(&numbers)
-            .map(Vec::into_iter)
-            .map(Iterator::sum)
-            .collect();
-        assert_eq!(expected, actual);
-    }
+        #[test]
+        fn test_string() {
+            use std::iter::FromIterator;
 
-    #[test]
-    fn test_string() {
-        use std::iter::FromIterator;
+            let letters = [
+                ["A".to_string(), "B".to_string()],
+                ["a".to_string(), "b".to_string()],
+            ];
+            let expected = vec![
+                "Aa".to_string(),
+                "Ab".to_string(),
+                "Ba".to_string(),
+                "Bb".to_string(),
+            ];
+            let actual: Vec<String> = cartesian::product(&letters)
+                .map(|combo| combo.into_iter().map(String::as_str))
+                .map(String::from_iter)
+                .collect();
+            assert_eq!(expected, actual);
+        }
 
-        let letters = [
-            ["A".to_string(), "B".to_string()],
-            ["a".to_string(), "b".to_string()],
-        ];
-        let expected = vec![
-            "Aa".to_string(),
-            "Ab".to_string(),
-            "Ba".to_string(),
-            "Bb".to_string(),
-        ];
-        let actual: Vec<String> = cartesian::product(&letters)
-            .map(|combo| combo.into_iter().map(String::as_str))
-            .map(String::from_iter)
-            .collect();
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn test_slices() {
-        let bits: [[u8; 2]; 4] = [[0, 8], [0, 4], [0, 2], [0, 1]];
-        let expected: Vec<u8> = (0..16).collect();
-        let actual: Vec<u8> = cartesian::product(&bits)
-            .map(Vec::into_iter)
-            .map(Iterator::sum)
-            .collect();
-        assert_eq!(expected, actual);
+        #[test]
+        fn test_slices() {
+            let bits: [[u8; 2]; 4] = [[0, 8], [0, 4], [0, 2], [0, 1]];
+            let expected: Vec<u8> = (0..16).collect();
+            let actual: Vec<u8> = cartesian::product(&bits)
+                .map(Vec::into_iter)
+                .map(Iterator::sum)
+                .collect();
+            assert_eq!(expected, actual);
+        }
     }
 }
