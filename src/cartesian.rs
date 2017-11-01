@@ -52,19 +52,16 @@ where
     &'a C: IntoIterator<Item = &'a T>,
 {
     // We start with fresh iterators and a `next_item` full of `None`s.
-    let iterators = collections
+    let mut iterators = collections
         .iter()
-        .map(IntoIterator::into_iter)
-        .collect();
-    let next_item = vec![None; collections.len()];
-    let mut product = Product {
+        .map(<&C>::into_iter)
+        .collect::<Vec<_>>();
+    let next_item = iterators.iter_mut().map(Iterator::next).collect();
+    Product {
         collections,
         iterators,
         next_item,
-    };
-    // Fill `next_item`, to finish initialization.
-    product.fill_up_next_item();
-    product
+    }
 }
 
 
@@ -73,9 +70,12 @@ pub struct Product<'a, C: 'a, T: 'a>
 where
     &'a C: IntoIterator<Item = &'a T>,
 {
+    /// The underlying collections that we iterate over.
     collections: &'a [C],
+    /// Our own set of sub-iterators, taken from `collections`.
     iterators: Vec<<&'a C as IntoIterator>::IntoIter>,
-    next_item: Vec<Option<&'a T>>,
+    /// The next item to yield.
+    next_item: Option<Vec<&'a T>>,
 }
 
 impl<'a, C, T> Iterator for Product<'a, C, T>
@@ -85,42 +85,8 @@ where
     type Item = Vec<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // At this point, the last called method was `fill_up_next_item()`.
-        // That means that `next_item` should only contain `Some`s and
-        // `collect()` should hence return `Some(Vec(&T))`.
-        // If `collect()` returns `None`, there are two cases:
-        // 1. `next_item` contains only `None`s at this point -- we
-        //    have finished iteration and are exhausted.
-        // 2. `next_item` contains some `Some`s and some `None`s -- at
-        //    least one of the underlying collections is empty and we
-        //    should yield not one item.
-        // If there are *no* underlying collections, `collect()` would
-        // return `Some(empty_vec)` indefinitely. (The *nullary* case)
-        // In this case, we manually exhaust the iterator a bit further
-        // down.
-        let result = self.next_item
-            .iter()
-            .cloned()
-            .collect::<Option<Self::Item>>();
-        if result.is_some() {
-            // We are not exhausted yet, prepare the next iteration.
-            if self.is_nullary() {
-                // See above for why we do this.
-                self.exhaust();
-            } else {
-                // `advance_iterators()` leaves a string of `None`s on
-                // the right side of `next_item`. `fill_up_next_item()`
-                // replaces them with `Some`s. `is_exhausted` keeps us
-                // from cycling forever.
-                self.advance_iterators();
-                if !self.is_exhausted() {
-                    self.fill_up_next_item();
-                }
-            }
-        }
-        // And now, we have two cases -- either the iterator is exhausted, or
-        // the last method called was `fill_up_next_item()`. Thus, we have
-        // re-established the
+        let result = self.next_item.clone();
+        self.advance();
         result
     }
 }
@@ -129,88 +95,66 @@ impl<'a, C, T> Product<'a, C, T>
 where
     &'a C: IntoIterator<Item = &'a T>,
 {
-    /// Fills the `None`s in `next_item` from left to right.
+    /// Advances the iterators and updates `self.next_item`.
     ///
-    /// This function assumes and guarantees that `next_item` is
-    /// *partitioned*, i.e. that consists of `Some`s on the left and
-    /// `None`s on the right.
+    /// This loop works like incrementing a number digit by digit. We
+    /// go over each iterator and its corresponding "digit" in
+    /// `next_item` in lockstep, starting at the back.
     ///
-    /// None of the sub-iterators should be exhausted at this point. If
-    /// one of them is, this function aborts immediately to keep
-    /// `next_item` partitioned.
-    fn fill_up_next_item(&mut self) {
-        let lockstep = self.iterators
-            .iter_mut()
-            .zip(self.next_item.iter_mut())
-            .skip_while(|&(_, ref e)| e.is_some());
-        for (iterator, element) in lockstep {
-            *element = iterator.next();
-            if element.is_none() {
-                return;
+    /// If we can advance the iterator, we update the "digit" and are
+    /// done. If the iterator is exhausted, we have to go from "9" to
+    /// "10": we restart the iterator, grab the first element, and move
+    /// on to the next digit.
+    ///
+    /// The `break` expressions are to be understood literally: our
+    /// scheme can break in two ways.
+    /// 1. The very first iterator (`i==0`) is exhausted.
+    /// 2. A freshly restarted iterator is empty. (should never happen!)
+    /// In both cases, we want to exhaust `self` immediately. We do so
+    /// by breaking out of the loop, falling through to the very last
+    /// line, and manually set `self.next_item` to `None`.
+    ///
+    /// Note that there is a so-called nullary case, when
+    /// `cartesian::product()` is called with an empty slice. While
+    /// this use-case is debatable, the mathematically correct way to
+    /// deal with it is to yield some empty vector once and then
+    /// nothing.
+    ///
+    /// Luckily, we already handle this correctly! Because of the way
+    /// `Iterator::collect()` works when collecting into an
+    /// `Option<Vec<_>>`, `next_item` is initialized to some empty
+    /// vector, so this will be the first thing we yield. Then, when
+    /// `self.advance()` is called, we fall through the `while` loop
+    /// and immediately exhaust this iterator, yielding nothing more.
+    fn advance(&mut self) {
+        if let Some(ref mut next_item) = self.next_item {
+            let mut i = self.iterators.len();
+            while i > 0 {
+                i -= 1;
+                // Grab the next item from the current sub-iterator.
+                if let Some(elt) = self.iterators[i].next() {
+                    next_item[i] = elt;
+                    // If that works, we're done!
+                    return;
+                } else if i == 0 {
+                    // Last sub-iterator is exhausted, so we're
+                    // exhausted, too.
+                    break;
+                }
+                // The current sub-terator is empty, start anew.
+                self.iterators[i] = self.collections[i].into_iter();
+                if let Some(elt) = self.iterators[i].next() {
+                    next_item[i] = elt;
+                    // Roll over to the next sub-iterator.
+                } else {
+                    // Should never happen: The freshly restarted
+                    // sub-iterator is already empty.
+                    break;
+                }
             }
         }
-    }
-
-    /// Advances and cycles the sub-iterators.
-    ///
-    /// This function assumes that `next_item` is filled with `Some`s.
-    /// It goes over them in from right to left and checks for each if
-    /// it is exhausted. Exhausted iterators are noted with a `None` in
-    /// `next_item` and started anew. The first iterator that isn't
-    /// exhausted gets to put its next item into `next_item` and aborts
-    /// the function.
-    ///
-    /// As a result, `next_item` is in a partitioned state after this
-    /// call, i.e. all the elements to the left are `Some`s and all the
-    /// elements to the right are `None`s. That means that after it,
-    /// `fill_up_next_item` should be called to replace the `None`s
-    /// with `Some`s.
-    ///
-    /// The only exception is when _all_ elements of `next_item` are
-    /// `None`. This implies that all sub-iterators had to be restarted
-    /// at once. This, in turn, means that we have gone through all
-    /// combinations of the input and the iterator is, in fact, done.
-    /// The implementation should check for this case before calling
-    /// `fill_up_next_item`.
-    fn advance_iterators(&mut self) {
-        let lockstep = self.collections
-            .iter()
-            .zip(self.iterators.iter_mut())
-            .zip(self.next_item.iter_mut())
-            .rev();
-        for ((collection, iterator), element) in lockstep {
-            *element = iterator.next();
-            match *element {
-                Some(_) => break,
-                None => *iterator = collection.into_iter(),
-            }
-        }
-    }
-
-    /// Checks if we have no collections at all.
-    ///
-    /// In the nullary case, we have to manually set `next_item` to a
-    /// value that signals exhaustedness. Otherwise,
-    /// `advance_iterators()` will do this for free.
-    fn is_nullary(&self) -> bool {
-        self.collections.is_empty()
-    }
-
-    /// Checks if the iterator is exhausted.
-    ///
-    /// The iterator is exhausted if `next_item` contains at least one
-    /// `None`. We have to take care of the nullary-but-not-exhausted
-    /// case, which is an empty `next_item`.
-    fn is_exhausted(&self) -> bool {
-        match self.next_item.first() {
-            Some(&None) => true,
-            _ => false,
-        }
-    }
-
-    /// Manually exhausts this iterator.
-    fn exhaust(&mut self) {
-        self.next_item = vec![None];
+        // Exhaust this iterator if the above loop `break`s.
+        self.next_item = None;
     }
 }
 
