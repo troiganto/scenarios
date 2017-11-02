@@ -21,6 +21,7 @@ use consumers::children;
 use consumers::pool;
 
 
+/// The entry point and wrapper around `try_main`.
 fn main() {
     // Get clapp::App instance.
     let app = app::get_app();
@@ -46,6 +47,9 @@ fn main() {
 }
 
 
+/// The actual main function.
+///
+/// It receives the fully parsed arguments and may return an error.
 fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
@@ -74,6 +78,11 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 }
 
 
+/// Prints the given scenarios to stdout.
+///
+/// # Errors
+/// This fails if two variable names conflict and strict mode is
+/// enabled.
 fn handle_printing<I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
@@ -92,14 +101,27 @@ where
 }
 
 
+/// Helper struct that breaks up the task of executing a command line.
 struct CommandLineHandler<'a> {
+    /// Flag read from --keep-going.
     keep_going: bool,
+    /// The command line that is executed for each scenario.
     command_line: consumers::CommandLine<&'a str>,
+    /// Our stock of tokens for parallelism.
     tokens: consumers::TokenStock,
+    /// A pool of currently-running processes.
     children: consumers::ProcessPool,
 }
 
 impl<'a> CommandLineHandler<'a> {
+    /// Creates a new handler.
+    ///
+    /// This reads the parsed command-line arguments and initializes
+    /// the fields of this struct from them.
+    ///
+    /// # Errors
+    /// This fails if either `max_num_tokens_from_args()` or
+    /// `command_line_from_args()` fails.
     pub fn new(args: &'a clap::ArgMatches) -> Result<Self, Error> {
         let handler = CommandLineHandler {
             keep_going: args.is_present("keep_going"),
@@ -110,6 +132,10 @@ impl<'a> CommandLineHandler<'a> {
         Ok(handler)
     }
 
+    /// Creates a `CommandLine` froom `args`.
+    ///
+    /// # Errors
+    /// This fails if no or an empty command line was given.
     fn command_line_from_args(args: &'a clap::ArgMatches) -> Result<CommandLine<&'a str>, Error> {
         let options = commandline::Options {
             is_strict: !args.is_present("lax"),
@@ -122,6 +148,11 @@ impl<'a> CommandLineHandler<'a> {
             .ok_or(Error::NoCommandLine)
     }
 
+    /// Parses and interprets the `--jobs` option.
+    ///
+    /// # Errors
+    /// This fails when `--jobs` is given a value that cannot be parsed
+    /// as an unsigned integer.
     fn max_num_tokens_from_args(args: &clap::ArgMatches) -> Result<usize, Error> {
         if let Some(num) = args.value_of("jobs") {
             num.parse::<usize>().map_err(Error::from)
@@ -132,6 +163,13 @@ impl<'a> CommandLineHandler<'a> {
         }
     }
 
+    /// Runs the main loop of the program and tears it down afterwards.
+    ///
+    /// This immediately calls `inner_loop()` and afterwards waits for
+    /// all running child processes.
+    ///
+    /// # Errors
+    /// Same as `inner_loop()`.
     pub fn handle<I>(&mut self, scenarios: I) -> Result<(), Error>
     where
         I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
@@ -151,6 +189,20 @@ impl<'a> CommandLineHandler<'a> {
         Ok(())
     }
 
+    /// The main loop of the program.
+    ///
+    /// This starts one child process for each scenario and pushes it
+    /// into the pool `children`. If the maximum allowed number of
+    /// child processes is running, this loop waits until one of them
+    /// has finished.
+    ///
+    /// # Errors
+    /// This function may fail if:
+    /// - spawning a child process gives an `io::Error`;
+    /// - waiting on a child process gives an `io::Error`;
+    /// - two variable names conflict and strict mode is enabled;
+    /// - a child process exits with non-zero exit status and
+    ///   `keep_going` is `false`.
     fn inner_loop<I>(&mut self, scenarios: I) -> Result<(), Error>
     where
         I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
@@ -162,9 +214,6 @@ impl<'a> CommandLineHandler<'a> {
         } else {
             child.into_result()
         };
-        // Iterate over all scenarios. Because `children` panicks if we
-        // drop it while it's still full, we use an anonymous function to
-        // let no result escape. TODO: Wait for `catch_expr`.
         for scenario in scenarios {
             let token = pool::spin_wait_for_token(&mut self.tokens, &mut self.children, &reaper)?;
             let child = self.command_line
