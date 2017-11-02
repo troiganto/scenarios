@@ -3,6 +3,7 @@ use std::collections::hash_map::{self, HashMap};
 use std::error::Error;
 use std::fmt::{self, Display};
 
+use quick_error::ResultExt;
 
 /// Tests if a character is a valid C identifier.
 ///
@@ -165,7 +166,7 @@ impl Scenario {
         // Merge variable definitions. If an error occurs, build a
         // `ScenarioError::StrictMergeFailed` value and return.
         merge_vars(&mut self.variables, other_vars, strict)
-            .map_err(|varname| fail_strict_merge(varname, &self.name, &other.name),)?;
+            .context((self.name.as_ref(), other.name.as_ref()))?;
         // If we merged names before the variables, the error would
         // contain the already-merged name -- thus, we only merge names
         // after merging the variables has succeeded.
@@ -226,17 +227,12 @@ quick_error! {
             description("conflicting variable definitions")
             display(err) -> ("{}: \"{}\" defined by scenarios \"{}\" and \"{}\"",
                              err.description(), varname, left, right)
+            context(left_right: (&'a str, &'a str), v: String) -> {
+                varname: v,
+                left: left_right.0.to_owned(),
+                right: left_right.1.to_owned()  // No trailing comma allowed here!
+            }
         }
-    }
-}
-
-
-/// Shortens creation of `ScenarioError::StrictMergeFailed` values.
-fn fail_strict_merge(varname: String, left: &str, right: &str) -> ScenarioError {
-    ScenarioError::StrictMergeFailed {
-        varname: varname,
-        left: left.to_owned(),
-        right: right.to_owned(),
     }
 }
 
