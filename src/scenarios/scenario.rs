@@ -5,33 +5,6 @@ use std::fmt::{self, Display};
 
 use quick_error::ResultExt;
 
-/// Tests if a character is a valid C identifier.
-///
-/// C identifiers contain only the following characters:
-/// * ASCII letters (lowercase or uppercase),
-/// * ASCII digits,
-/// * the ASCII underscore.
-/// Additionally, they must not begin with a digit, and contain at
-/// least one character.
-fn is_c_identifier(s: &str) -> bool {
-    let mut iter = s.as_bytes().iter();
-    let first_byte = match iter.next() {
-        Some(byte) => byte,
-        None => return false,
-    };
-    match *first_byte {
-        b'A'...b'Z' | b'a'...b'z' | b'_' => {},
-        _ => return false,
-    }
-    for byte in s.as_bytes().iter() {
-        match *byte {
-            b'A'...b'Z' | b'a'...b'z' | b'0'...b'9' | b'_' => {},
-            _ => return false,
-        }
-    }
-    true
-}
-
 
 /// Named set of environment variable definitions.
 ///
@@ -179,6 +152,34 @@ impl Display for Scenario {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Scenario \"{}\"", self.name)
     }
+}
+
+
+/// Tests if a character is a valid C identifier.
+///
+/// C identifiers contain only the following characters:
+/// * ASCII letters (lowercase or uppercase),
+/// * ASCII digits,
+/// * the ASCII underscore.
+/// Additionally, they must not begin with a digit, and contain at
+/// least one character.
+fn is_c_identifier(s: &str) -> bool {
+    let mut iter = s.as_bytes().iter();
+    let first_byte = match iter.next() {
+        Some(byte) => byte,
+        None => return false,
+    };
+    match *first_byte {
+        b'A'...b'Z' | b'a'...b'z' | b'_' => {},
+        _ => return false,
+    }
+    for byte in s.as_bytes().iter() {
+        match *byte {
+            b'A'...b'Z' | b'a'...b'z' | b'0'...b'9' | b'_' => {},
+            _ => return false,
+        }
+    }
+    true
 }
 
 
