@@ -46,28 +46,24 @@ impl<'a> ScenarioFile<'a> {
 
     /// Reads scenarios from a given buffered reader.
     pub fn new<F: BufRead>(reader: F, filename: &str) -> Result<ScenarioFile, ParseError> {
-        let mut loc = ErrorLocation::new(filename);
-        let lines = Self::new_impl(reader, &mut loc).context(loc)?;
-        Ok(ScenarioFile { filename, lines })
+        let lines = Vec::new();
+        let mut file = ScenarioFile { filename, lines };
+        file.read_from(reader)?;
+        Ok(file)
     }
 
-    /// The actual implementation of `new()`.
-    ///
-    /// In the case of an error, the `loc` parameter is used to report
-    /// back the line in which the error occurred.
-    fn new_impl<F: BufRead>(
-        mut reader: F,
-        loc: &mut ErrorLocation<&'a str>,
-    ) -> Result<Vec<InputLine>, ErrorKind> {
-        let mut lines = Vec::new();
+    /// Reads lines from `reader`, parses them, and keeps them.
+    fn read_from<F: BufRead>(&mut self, mut reader: F) -> Result<(), ParseError> {
+        let mut loc = ErrorLocation::new(self.filename);
         let mut buffer = String::new();
         loop {
             loc.lineno += 1;
-            let num_bytes = reader.read_line(&mut buffer)?;
+            let num_bytes = reader.read_line(&mut buffer).context(loc)?;
             if num_bytes == 0 {
-                return Ok(lines);
+                return Ok(());
             }
-            lines.push(buffer.parse::<InputLine>()?);
+            let line = buffer.parse::<InputLine>().context(loc)?;
+            self.lines.push(line);
             buffer.clear();
         }
     }
