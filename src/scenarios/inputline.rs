@@ -47,11 +47,11 @@ impl FromStr for InputLine {
     /// Parses a line and decide how to interpret it.
     fn from_str(line: &str) -> Result<Self, Self::Err> {
         let line = line.trim();
-        if Self::is_comment(line) {
+        if is_comment(line) {
             Ok(InputLine::Comment)
-        } else if let Some(name) = Self::try_parse_header(line) {
+        } else if let Some(name) = try_parse_header(line) {
             Ok(InputLine::Header(name?.to_owned()))
-        } else if let Some((name, value)) = Self::try_parse_definition(line) {
+        } else if let Some((name, value)) = try_parse_definition(line) {
             Ok(InputLine::Definition(name.to_owned(), value.to_owned()))
         } else {
             Err(SyntaxError::NotAVarDef(line.to_owned()))
@@ -60,43 +60,70 @@ impl FromStr for InputLine {
 }
 
 impl InputLine {
-    /// Checks if a line is blank or a comment.
-    fn is_comment(s: &str) -> bool {
-        s.is_empty() || s.starts_with('#')
+    /// Returns `true` if this is a comment line.
+    pub fn is_comment(&self) -> bool {
+        match *self {
+            InputLine::Comment => true,
+            _ => false,
+        }
     }
 
-    /// Returns the inside of the brackets if `s` is a header line.
-    ///
-    /// # Errors
-    /// If `s` is not a header line, this returns `None`.
-    /// If `s` begins with an opening bracket, but doesn't end with a
-    /// closing bracket, this returns `Some(Err(err))`.
-    fn try_parse_header(s: &str) -> Option<Result<&str, SyntaxError>> {
-        if !s.starts_with('[') {
-            return None;
+    /// Returns `true` if this is a header line.
+    pub fn is_header(&self) -> bool {
+        match *self {
+            InputLine::Header(_) => true,
+            _ => false,
         }
-        if !s.ends_with(']') {
-            let err = if s.find(']').is_none() {
-                SyntaxError::NoClosingBracket(s.to_owned())
-            } else {
-                SyntaxError::TextAfterClosingBracket(s.to_owned())
-            };
-            return Some(Err(err));
-        }
-        // Should be safe because '[' and ']' are one byte long
-        // in UTF-8.
-        let inner = s[1..s.len() - 1].trim();
-        Some(Ok(inner))
     }
 
-    /// Returns the variable name and value if `s` is a definition.
-    ///
-    /// This splits `s` at the first equals sign and trims both sides.
-    /// If `s` is not a header line, this returns `None`.
-    fn try_parse_definition(s: &str) -> Option<(&str, &str)> {
-        s.find('=')
-            .map(|eqpos| (s[..eqpos].trim(), s[eqpos + 1..].trim()))
+    /// Returns `true` if this is a definition line.
+    pub fn is_definition(&self) -> bool {
+        match *self {
+            InputLine::Definition(_, _) => true,
+            _ => false,
+        }
     }
+}
+
+
+/// Checks if a line is blank or a comment.
+fn is_comment(s: &str) -> bool {
+    s.is_empty() || s.starts_with('#')
+}
+
+
+/// Returns the inside of the brackets if `s` is a header line.
+///
+/// # Errors
+/// If `s` is not a header line, this returns `None`.
+/// If `s` begins with an opening bracket, but doesn't end with a
+/// closing bracket, this returns `Some(Err(err))`.
+fn try_parse_header(s: &str) -> Option<Result<&str, SyntaxError>> {
+    if !s.starts_with('[') {
+        return None;
+    }
+    if !s.ends_with(']') {
+        let err = if s.find(']').is_none() {
+            SyntaxError::NoClosingBracket(s.to_owned())
+        } else {
+            SyntaxError::TextAfterClosingBracket(s.to_owned())
+        };
+        return Some(Err(err));
+    }
+    // Should be safe because '[' and ']' are one byte long
+    // in UTF-8.
+    let inner = s[1..s.len() - 1].trim();
+    Some(Ok(inner))
+}
+
+
+/// Returns the variable name and value if `s` is a definition.
+///
+/// This splits `s` at the first equals sign and trims both sides.
+/// If `s` is not a header line, this returns `None`.
+fn try_parse_definition(s: &str) -> Option<(&str, &str)> {
+    s.find('=')
+        .map(|eqpos| (s[..eqpos].trim(), s[eqpos + 1..].trim()))
 }
 
 
