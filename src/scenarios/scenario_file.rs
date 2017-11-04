@@ -134,12 +134,10 @@ impl<'a> ScenariosIter<'a> {
     fn next_header_line(&mut self) -> Result<Option<&'a str>, ErrorKind> {
         while let Some(line) = self.lines.get(self.location.lineno) {
             self.location.lineno += 1;
-            match *line {
-                InputLine::Header(ref line) => return Ok(Some(line.as_str())),
-                InputLine::Definition(ref name, _) => {
-                    return Err(ErrorKind::UnexpectedVarDef(name.to_owned()));
-                },
-                InputLine::Comment => {},
+            if let Some(header) = line.header() {
+                return Ok(Some(header));
+            } else if let Some(name) = line.definition_name() {
+                return Err(ErrorKind::UnexpectedVarDef(name.into()));
             }
         }
         Ok(None)
@@ -153,18 +151,14 @@ impl<'a> ScenariosIter<'a> {
     /// method will give eitehr `None` or `Some(InputLine::Header)`.
     fn next_definition_line(&mut self) -> Option<(&'a str, &'a str)> {
         while let Some(line) = self.lines.get(self.location.lineno) {
-            match *line {
-                InputLine::Header(_) => {
-                    // Leave *without* moving to the next line.
-                    break;
-                },
-                InputLine::Definition(ref name, ref value) => {
-                    self.location.lineno += 1;
-                    return Some((name, value));
-                },
-                InputLine::Comment => {
-                    self.location.lineno += 1;
-                },
+            if line.is_header() {
+                // Leave *without* moving to the next line.
+                break;
+            } else {
+                self.location.lineno += 1;
+                if let Some(parts) = line.definition() {
+                    return Some(parts);
+                }
             }
         }
         None
