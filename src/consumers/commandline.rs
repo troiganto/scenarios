@@ -186,7 +186,7 @@ impl<S: AsRef<str>> CommandLine<S> {
     pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild> {
         let (name, variables) = scenario.into_parts();
         let command = self.create_command(variables, &name)?;
-        Ok(PreparedChild::new(name, command))
+        Ok(PreparedChild::new(name.into_owned(), command))
     }
 
     /// Like `with_scenario`, but does not consume the `Scenario`.

@@ -1,9 +1,46 @@
 
-use std::collections::hash_map::{self, HashMap};
 use std::error::Error;
 use std::fmt::{self, Display};
+use std::borrow::{Borrow, Cow};
+use std::collections::hash_map::{self, HashMap};
 
 use quick_error::ResultExt;
+
+
+/// Wrapper type around customization options to `Scenario::merge()`.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MergeOptions<'a> {
+    /// A string used to join the scenario names together.
+    ///
+    /// The default is `", "`, a comma followed by a space.
+    pub delimiter: &'a str,
+    /// Flag that enables strict mode.
+    ///
+    /// In strict mode, merging fails if two scenarios define the same
+    /// variable. By default, strict mode is enabled.
+    pub is_strict: bool,
+}
+
+impl<'a> MergeOptions<'a> {
+    fn new(delimiter: &'a str, is_strict: bool) -> Self {
+        MergeOptions {
+            delimiter,
+            is_strict,
+        }
+    }
+}
+
+impl<'a> Default for MergeOptions<'a> {
+    fn default() -> Self {
+        MergeOptions {
+            delimiter: ", ",
+            is_strict: true,
+        }
+    }
+}
+
+
+pub type Result<T> = ::std::result::Result<T, ScenarioError>;
 
 
 /// Named set of environment variable definitions.
@@ -16,64 +53,39 @@ use quick_error::ResultExt;
 /// C identifiers. A scenario name must be non-empty and not contain
 /// any null byte.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Scenario {
-    name: String,
-    variables: HashMap<String, String>,
+pub struct Scenario<'a> {
+    name: Cow<'a, str>,
+    variables: HashMap<&'a str, &'a str>,
 }
 
-impl Scenario {
+impl<'a> Scenario<'a> {
     /// Creates a new scenario named `name`.
     ///
     /// # Errors
     /// This call fails with `ParseError::InvalidName` if `name`
     /// is the empty string or contains a null byte.
-    pub fn new<S: Into<String>>(name: S) -> Result<Self, ScenarioError> {
+    pub fn new<S: Into<Cow<'a, str>>>(name: S) -> Result<Self> {
         let name = name.into();
         if name.is_empty() || name.contains('\0') {
-            Err(ScenarioError::InvalidName(name))
+            Err(ScenarioError::InvalidName(name.into_owned()))
         } else {
-            Ok(
-                Scenario {
-                    name,
-                    variables: HashMap::new(),
-                },
-            )
+            let variables = HashMap::new();
+            Ok(Scenario { name, variables })
         }
-    }
-
-    /// Convenience wrapper around `new()` and `add_variable()`.
-    pub fn with_variables<S1, S2, S3, I>(name: S1, variables: I) -> Result<Self, ScenarioError>
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-        S3: Into<String>,
-        I: IntoIterator<Item = (S2, S3)>,
-    {
-        let mut s = Scenario::new(name)?;
-        for (name, value) in variables {
-            s.add_variable(name, value)?;
-        }
-        Ok(s)
     }
 
     /// Adds another variable definition of the current set.
     ///
     /// # Errors
-    /// This call fails with `ParseError::InvalidVariable` if `name` is
-    /// not a valid variable name (`[A-Za-z_][A-Za-z0-9_]+`). It fails
-    /// with `ParseError::DuplicateVariable` if a variable of this name
-    /// already has been added to the scenario.
-    pub fn add_variable<S1, S2>(&mut self, name: S1, value: S2) -> Result<(), ScenarioError>
-    where
-        S1: Into<String>,
-        S2: Into<String>,
-    {
-        let name = name.into();
-        let value = value.into();
-        if self.has_variable(&name) {
-            Err(ScenarioError::DuplicateVariable(name))
-        } else if !is_c_identifier(&name) {
-            Err(ScenarioError::InvalidVariable(name))
+    /// This call fails with `ScenarioError::InvalidVariable` if `name`
+    /// is not a valid variable name (`[A-Za-z_][A-Za-z0-9_]+`). It
+    /// fails with `ScenarioError::DuplicateVariable` if a variable of
+    /// this name already has been added to the scenario.
+    pub fn add_variable(&mut self, name: &'a str, value: &'a str) -> Result<()> {
+        if self.has_variable(name) {
+            Err(ScenarioError::DuplicateVariable(name.to_owned()))
+        } else if !is_c_identifier(name) {
+            Err(ScenarioError::InvalidVariable(name.to_owned()))
         } else {
             self.variables.insert(name, value);
             Ok(())
@@ -91,64 +103,114 @@ impl Scenario {
     }
 
     /// Returns the value of variable named `name`, if it exists.
-    pub fn get_variable(&self, name: &str) -> Option<&str> {
-        self.variables.get(name).map(String::as_str)
+    pub fn get_variable(&self, name: &str) -> Option<&'a str> {
+        self.variables.get(name).cloned()
     }
 
     /// Returns an iterator over all variable names.
-    pub fn variable_names(&self) -> hash_map::Keys<String, String> {
+    pub fn variable_names(&self) -> hash_map::Keys<&'a str, &'a str> {
         self.variables.keys()
     }
 
     /// Returns an iterator over all variables.
-    pub fn variables(&self) -> hash_map::Iter<String, String> {
+    pub fn variables(&self) -> hash_map::Iter<&'a str, &'a str> {
         self.variables.iter()
     }
 
-    /// Returns an iterator over all variables.
-    pub fn into_variables(self) -> hash_map::IntoIter<String, String> {
+    /// Consumes the scenario to return an iterator over all variables.
+    pub fn into_variables(self) -> hash_map::IntoIter<&'a str, &'a str> {
         self.variables.into_iter()
     }
 
     /// Splits the scenario into the name and the variables.
-    pub fn into_parts(self) -> (String, hash_map::IntoIter<String, String>) {
+    pub fn into_parts(self) -> (Cow<'a, str>, hash_map::IntoIter<&'a str, &'a str>) {
         (self.name, self.variables.into_iter())
+    }
+
+    /// Merges several scenarios into one.
+    ///
+    /// See `Scenario::merge` for more information.
+    ///
+    /// # Errors
+    /// The merge can fail for two reasons:
+    /// 1. The iterator `scenarios` was empty – in that case, the
+    ///    error `ScenarioError::NoScenarios` is returned.
+    /// 2. Strict mode was enabled and two scenarios defined the same
+    ///    variable – in that case, the error
+    ///    `ScenarioError::StrictMergeFailed` is returned and contains
+    ///    the names of the offending scenarios and variable.
+    pub fn merge_all<I>(scenarios: I, options: MergeOptions) -> Result<Self>
+    where
+        I: IntoIterator,
+        I::Item: Borrow<Self>,
+    {
+        let mut scenarios = scenarios.into_iter();
+        let mut accumulator = match scenarios.next() {
+            Some(scenario) => scenario.borrow().clone(),
+            None => return Err(ScenarioError::NoScenarios),
+        };
+        for scenario in scenarios {
+            accumulator.merge(scenario.borrow(), options)?;
+        }
+        Ok(accumulator)
     }
 
     /// Merges another scenario into this one.
     ///
-    /// This combines the names and variables of both scenarios.
-    /// The names get combined with `delimiter` between them. Variables
-    /// are combined by adding the `other` `HashMap` into `self`'s.
-    /// If both scenarios define the same variable and `strict` is
-    /// `false`, the value of `other`'s takes precedence.
+    /// This combines the names and variables of both scenarios. The
+    /// names get combined with `options.delimiter` between them.
+    /// Variables are combined by adding the `other` `HashMap` into
+    /// `self`'s. If both scenarios define the same variable and
+    /// `options.strict` is `false`, the value of `other`'s takes
+    /// precedence.
     ///
     /// #Errors
-    /// If `strict` is `true` and both scenarios define the same
-    /// variable, a `ScenarioError::StrictMergeFailed` is returned.
-    pub fn merge(
-        &mut self,
-        other: &Scenario,
-        delimiter: &str,
-        strict: bool,
-    ) -> Result<(), ScenarioError> {
-        // Turn (&String, &String) iterator into (String, String) iterator.
-        let other_vars = other
-            .variables()
-            .map(|(k, v)| (k.to_owned(), v.to_owned()));
-        // Merge variable definitions. If an error occurs, build a
-        // `ScenarioError::StrictMergeFailed` value and return.
-        merge_vars(&mut self.variables, other_vars, strict)
-            .context((self.name.as_ref(), other.name.as_ref()))?;
-        // If we merged names before the variables, the error would
-        // contain the already-merged name -- thus, we only merge names
-        // after merging the variables has succeeded.
-        merge_names(&mut self.name, delimiter, &other.name);
+    /// If `options.strict` is `true` and both scenarios define the
+    /// same variable, `ScenarioError::StrictMergeFailed` is returned.
+    pub fn merge(&mut self, other: &Scenario<'a>, options: MergeOptions) -> Result<()> {
+        // Turn (&&str, &&str) iterator into (&str, &str) iterator.
+        let other_vars = other.variables().map(|(&k, &v)| (k, v));
+        // Merge variable definitions first, then the scenario names. If we
+        // merged names before the variables, the error message would contain
+        // the already-merged name.
+        self.merge_vars(other_vars, options.is_strict)
+            .context((self.name(), other.name()))?;
+        self.merge_name(options.delimiter, &other.name);
+        Ok(())
+    }
+
+    /// Appends `delimiter` and `other_name` to `self.name`.
+    fn merge_name(&mut self, delimiter: &str, other_name: &str) {
+        let name = self.name.to_mut();
+        name.reserve(delimiter.len() + other_name.len());
+        name.push_str(delimiter);
+        name.push_str(other_name);
+    }
+
+    /// Adds all variable definitions in `to_add` to `self.variables`.
+    ///
+    /// If `strict` is `true`, this refuses to overwrite existing
+    /// variable definitions. In such a case, the offending variable
+    /// name is reported in the `Err` variant of the result.
+    fn merge_vars<I>(&mut self, to_add: I, strict: bool) -> ::std::result::Result<(), String>
+    where
+        I: Iterator<Item = (&'a str, &'a str)>,
+    {
+        if strict {
+            for (key, value) in to_add {
+                if self.variables.contains_key(key) {
+                    return Err(key.to_owned());
+                }
+                self.variables.insert(key, value);
+            }
+        } else {
+            self.variables.extend(to_add);
+        }
         Ok(())
     }
 }
 
-impl Display for Scenario {
+impl<'a> Display for Scenario<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Scenario \"{}\"", self.name)
     }
@@ -183,31 +245,6 @@ fn is_c_identifier(s: &str) -> bool {
 }
 
 
-fn merge_names(left: &mut String, delimiter: &str, right: &str) {
-    left.reserve(delimiter.len() + right.len());
-    left.push_str(delimiter);
-    left.push_str(right);
-}
-
-
-fn merge_vars<I>(map: &mut HashMap<String, String>, to_add: I, strict: bool) -> Result<(), String>
-where
-    I: Iterator<Item = (String, String)>,
-{
-    if strict {
-        for (key, value) in to_add {
-            if map.contains_key(&key) {
-                return Err(key);
-            }
-            map.insert(key, value);
-        }
-    } else {
-        map.extend(to_add);
-    }
-    Ok(())
-}
-
-
 quick_error! {
     /// Errors caused during building a scenario.
     #[derive(Debug)]
@@ -223,6 +260,9 @@ quick_error! {
         DuplicateVariable(name: String) {
             description("variable already defined")
             display(err) -> ("{}: \"{}\"", err.description(), name)
+        }
+        NoScenarios {
+            description("scenario merge: no scenarios provided")
         }
         StrictMergeFailed{varname: String, left: String, right: String} {
             description("conflicting variable definitions")
@@ -242,6 +282,14 @@ quick_error! {
 mod tests {
     use super::*;
 
+    fn make_dummy_scenario<'a>(name: &'a str, vars: &[&'a str]) -> Scenario<'a> {
+        let mut result = Scenario::new(name).expect(name);
+        for var in vars.into_iter().cloned() {
+            result.add_variable(var, "").expect(var);
+        }
+        result
+    }
+
 
     #[test]
     fn test_is_c_identifier() {
@@ -259,7 +307,6 @@ mod tests {
         assert!(!is_c_identifier("🍣"));
     }
 
-
     #[test]
     fn test_scenario_new() {
         assert!(Scenario::new("A Name").is_ok());
@@ -270,7 +317,6 @@ mod tests {
         assert!(Scenario::new("\0").is_err());
         assert!(Scenario::new("").is_err());
     }
-
 
     #[test]
     fn test_scenario_add_variable() {
@@ -287,5 +333,67 @@ mod tests {
         // Check that adding occurred.
         assert!(s.has_variable("key"));
         assert!(!s.has_variable("a key"));
+    }
+
+    #[test]
+    fn test_merge_none() {
+        match Scenario::merge_all(&[], MergeOptions::default()).unwrap_err() {
+            ScenarioError::NoScenarios => {},
+            err => panic!("wrong error: {}", err),
+        }
+    }
+
+    #[test]
+    fn test_merge_one() {
+        let expected = make_dummy_scenario("A", &[]);
+        // TODO: Improve signature of merge_all to get rid of cloning here.
+        let merged = Scenario::merge_all(&[expected.clone()], MergeOptions::default()).unwrap();
+        assert_eq!(expected, merged);
+    }
+
+    #[test]
+    fn test_merge_two() {
+        let expected = make_dummy_scenario("A -- B", &["a", "b"]);
+        let mut merged = make_dummy_scenario("A", &["a"]);
+        let added = make_dummy_scenario("B", &["b"]);
+        merged
+            .merge(&added, MergeOptions::new(" -- ", true))
+            .unwrap();
+        assert_eq!(expected, merged);
+    }
+
+    #[test]
+    fn test_merge_error() {
+        let expected_message = "conflicting variable definitions: \"a\" defined by scenarios \
+                                \"A\" and \"B\"";
+        let mut merged = make_dummy_scenario("A", &["a"]);
+        let added = make_dummy_scenario("B", &["a"]);
+        let error = merged
+            .merge(&added, MergeOptions::default())
+            .unwrap_err();
+        assert_eq!(expected_message, error.to_string());
+    }
+
+    #[test]
+    fn test_lax_merge() {
+        let expected = make_dummy_scenario("A, B", &["a"]);
+        let mut merged = make_dummy_scenario("A", &["a"]);
+        let added = make_dummy_scenario("B", &["a"]);
+        merged
+            .merge(&added, MergeOptions::new(", ", false))
+            .unwrap();
+        assert_eq!(expected, merged);
+    }
+
+    #[test]
+    fn test_multi_merge() {
+        let expected = make_dummy_scenario("A/B/C", &["a", "aa", "b", "bb", "c", "cc"]);
+        let all = [
+            make_dummy_scenario("A", &["a", "aa"]),
+            make_dummy_scenario("B", &["b", "bb"]),
+            make_dummy_scenario("C", &["c", "cc"]),
+        ];
+        let actual = Scenario::merge_all(&all, MergeOptions::new("/", true)).unwrap();
+        assert_eq!(expected, actual);
     }
 }

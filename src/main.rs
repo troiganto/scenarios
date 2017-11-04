@@ -15,7 +15,7 @@ mod consumers;
 use std::io;
 use std::num::ParseIntError;
 
-use scenarios::Scenario;
+use scenarios::{Scenario, ScenarioFile};
 use consumers::commandline::{self, CommandLine};
 use consumers::children;
 use consumers::pool;
@@ -53,22 +53,25 @@ fn main() {
 fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
-    let scenario_files = args.values_of("input")
+    let scenario_files: Vec<ScenarioFile> = args.values_of("input")
         .ok_or(Error::NoScenarios)?
-        .map(scenarios::from_file_or_stdin)
-        .collect::<Result<Vec<Vec<Scenario>>, _>>()?;
+        .map(ScenarioFile::from_file_or_stdin)
+        .collect::<Result<_, _>>()?;
+    let all_scenarios: Vec<Vec<Scenario>> = scenario_files
+        .iter()
+        .map(|f| f.iter().collect::<Result<_, _>>())
+        .collect::<Result<_, _>>()?;
 
-    // Create and configure a scenarios merger.
-    let merger = scenarios::Merger::new()
-        .with_delimiter(
-            args.value_of("delimiter")
-                .expect("default value is missing"),
-        )
-        .with_strict_mode(!args.is_present("lax"));
+    // Read the scenario-merging options.
+    let merge_options = scenarios::MergeOptions {
+        delimiter: args.value_of("delimiter").expect("default value"),
+        is_strict: !args.is_present("lax"),
+    };
 
     // Use the merger to get a list of all combinations of scenarios.
     // Hand these then over to the correct handler.
-    let combined_scenarios = cartesian::product(&scenario_files).map(|set| merger.merge(set));
+    let combined_scenarios =
+        cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_options));
     if args.is_present("command_line") {
         CommandLineHandler::new(&args)?
             .handle(combined_scenarios)
@@ -83,9 +86,9 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 /// # Errors
 /// This fails if two variable names conflict and strict mode is
 /// enabled.
-fn handle_printing<I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
+fn handle_printing<'s, I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
 where
-    I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
+    I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
 {
     let mut printer = consumers::Printer::default();
     if args.is_present("print0") {
@@ -170,9 +173,9 @@ impl<'a> CommandLineHandler<'a> {
     ///
     /// # Errors
     /// Same as `inner_loop()`.
-    pub fn handle<I>(&mut self, scenarios: I) -> Result<(), Error>
+    pub fn handle<'s, I>(&mut self, scenarios: I) -> Result<(), Error>
     where
-        I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
+        I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
     {
         let run_result = self.inner_loop(scenarios);
         // Reap all remaining children.
@@ -203,9 +206,9 @@ impl<'a> CommandLineHandler<'a> {
     /// - two variable names conflict and strict mode is enabled;
     /// - a child process exits with non-zero exit status and
     ///   `keep_going` is `false`.
-    fn inner_loop<I>(&mut self, scenarios: I) -> Result<(), Error>
+    fn inner_loop<'s, I>(&mut self, scenarios: I) -> Result<(), Error>
     where
-        I: Iterator<Item = Result<Scenario, scenarios::MergeError>>,
+        I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
     {
         // Copy `keep_going` to avoid borrowing `self` to the closure.
         let keep_going = self.keep_going;
@@ -270,15 +273,6 @@ quick_error! {
         }
         NoCommandLine {
             description("no command line provided")
-        }
-    }
-}
-
-impl From<scenarios::MergeError> for Error {
-    fn from(err: scenarios::MergeError) -> Self {
-        match err {
-            scenarios::MergeError::NoScenarios => Error::NoScenarios,
-            scenarios::MergeError::ScenarioError(err) => Error::from(err),
         }
     }
 }

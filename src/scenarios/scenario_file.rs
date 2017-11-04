@@ -12,121 +12,97 @@ use super::scenario::{Scenario, ScenarioError};
 use super::inputline::{InputLine, SyntaxError};
 
 
-/// Returns `false` if two of the given `scenarios` have the same name.
-pub fn are_names_unique<'a, I>(scenarios: I) -> bool
-where
-    I: 'a + IntoIterator<Item = &'a Scenario>,
-{
-    let mut names = ::std::collections::HashSet::new();
-    scenarios.into_iter().all(|s| names.insert(s.name()))
+#[derive(Debug)]
+pub struct ScenarioFile<'a> {
+    filename: &'a str,
+    lines: Vec<InputLine>,
 }
 
+impl<'a> ScenarioFile<'a> {
+    /// Like `from_file`, but also handles `path == "-"`.
+    ///
+    /// If `path` equals `"-"`, this reads scenarios from stdin.
+    /// Otherwise,
+    /// it treats `path` like a regular file path and calls `from_file`.
+    pub fn from_file_or_stdin(path: &str) -> Result<ScenarioFile, ParseError> {
+        let stdin = io::stdin();
+        if path.borrow() == "-" {
+            Self::new(stdin.lock(), "<stdin>")
+        } else {
+            Self::from_file(path)
+        }
+    }
 
-/// Like `from_file`, but also handles `path == "-"`.
-///
-/// If `path` equals `"-"`, this reads scenarios from stdin. Otherwise,
-/// it treats `path` like a regular file path and calls `from_file`.
-pub fn from_file_or_stdin<S: Borrow<str>>(path: S) -> Result<Vec<Scenario>, ParseError> {
-    let stdin = io::stdin();
-    if path.borrow() == "-" {
-        from_named_buffer(stdin.lock(), "<stdin>")
-    } else {
-        from_file(path)
+    /// Opens a file and reads scenarios from it.
+    ///
+    /// If an error occurs, the error contains the path of the offending
+    /// file.
+    pub fn from_file(path: &str) -> Result<ScenarioFile, ParseError> {
+        let path = path.borrow();
+        let file = File::open(path).context(ErrorLocation::new(path))?;
+        let file = io::BufReader::new(file);
+        Self::new(file, path)
+    }
+
+    /// Reads scenarios from a given buffered reader.
+    pub fn new<F: BufRead>(reader: F, filename: &str) -> Result<ScenarioFile, ParseError> {
+        let mut loc = ErrorLocation::new(filename);
+        let lines = Self::new_impl(reader, &mut loc).context(loc)?;
+        Ok(ScenarioFile { filename, lines })
+    }
+
+    /// The actual implementation of `new()`.
+    ///
+    /// In the case of an error, the `loc` parameter is used to report
+    /// back the line in which the error occurred.
+    fn new_impl<F: BufRead>(
+        mut reader: F,
+        loc: &mut ErrorLocation<&'a str>,
+    ) -> Result<Vec<InputLine>, ErrorKind> {
+        let mut lines = Vec::new();
+        let mut buffer = String::new();
+        loop {
+            loc.lineno += 1;
+            let num_bytes = reader.read_line(&mut buffer)?;
+            if num_bytes == 0 {
+                return Ok(lines);
+            }
+            lines.push(buffer.parse::<InputLine>()?);
+            buffer.clear();
+        }
+    }
+
+    pub fn filename(&self) -> &str {
+        self.filename
+    }
+
+    pub fn iter(&self) -> ScenariosIter {
+        ScenariosIter::new(self.filename, &self.lines)
     }
 }
 
-/// Opens a file and reads scenarios from it.
-///
-/// If an error occurs, the error contains the path of the offending
-/// file.
-pub fn from_file<S: Borrow<str>>(path: S) -> Result<Vec<Scenario>, ParseError> {
-    let path = path.borrow();
-    let file = File::open(path).context(ErrorLocation::new(path))?;
-    let file = io::BufReader::new(file);
-    from_named_buffer(file, path)
-}
+impl<'a, 'b: 'a> IntoIterator for &'a ScenarioFile<'b> {
+    type IntoIter = ScenariosIter<'a>;
+    type Item = <Self::IntoIter as Iterator>::Item;
 
-/// Reads scenarios from a given buffered reader.
-pub fn from_named_buffer<F, S>(buffer: F, name: S) -> Result<Vec<Scenario>, ParseError>
-where
-    F: BufRead,
-    S: Borrow<str>,
-{
-    ScenariosIter::new(buffer, name.borrow()).and_then(Iterator::collect)
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
 }
 
 
 /// An iterator that reads `Scenario`s from a `BufRead` variable.
-#[derive(Debug)]
-struct ScenariosIter<'a, F: BufRead> {
-    /// The wrapped iterator of input file lines.
-    lines: io::Lines<F>,
-    /// Intermediate buffer for the next scenario's name.
-    ///
-    /// This value being `None` signals that this iterator is exhausted
-    /// and will yield no further `Scenario`s.
-    next_header: Option<String>,
-    /// The current filename and line number, used for error messages.
+#[derive(Debug, Clone)]
+pub struct ScenariosIter<'a> {
     location: ErrorLocation<&'a str>,
+    lines: &'a [InputLine],
 }
 
-
-impl<'a, F: BufRead> ScenariosIter<'a, F> {
+impl<'a> ScenariosIter<'a> {
     /// Creates a new instance.
-    ///
-    /// This takes a `BufRead` instance and drops lines until the
-    /// first header line has been found.
-    ///
-    /// The `filename` is used only for error messages.
-    ///
-    /// # Errors
-    /// See `scan_to_first_header()` for a description of error modes.
-    fn new(file: F, filename: &'a str) -> Result<Self, ParseError> {
-        let mut result = ScenariosIter {
-            lines: file.lines(),
-            next_header: None,
-            location: ErrorLocation::new(filename),
-        };
-        result.skip_to_next_header().context(result.location)?;
-        Ok(result)
-    }
-
-    /// Drop lines until the next header line appears.
-    ///
-    /// This sets `self.next_header` to the next header line and skips
-    /// all lines until then. If no next header line is found,
-    /// `self.next_header` is set to `None`. No  variable definitions
-    /// may occur in the skipped portion.
-    ///
-    /// This should only be called from within `new()`.
-    ///
-    /// # Errors
-    /// * `io::Error` if a line cannot be read.
-    /// * `inputline::SyntaxError` if a line cannot be interpreted.
-    /// * `UnexpectedVarDef` if a variable definition is found. Since
-    ///   no scenario has been declared yet, any definition would be
-    ///   out of place.
-    fn skip_to_next_header(&mut self) -> Result<(), ErrorKind> {
-        // Poison `self` pre-emptively.
-        self.next_header = None;
-        // Iterate over lines and interpret them. Any error is returned
-        // immediately, leaving a `None` in `next_header`.
-        while let Some(line) = self.next_line() {
-            match line?.parse::<InputLine>()? {
-                InputLine::Comment => {},
-                InputLine::Header(header) => {
-                    // We are successful and can set `next_header` back
-                    // to a valid value.
-                    self.next_header = Some(header);
-                    return Ok(());
-                },
-                InputLine::Definition(varname, _) => {
-                    return Err(ErrorKind::UnexpectedVardef(varname));
-                },
-            }
-        }
-        // No further header found, `next_header` stays `None`.
-        Ok(())
+    fn new(filename: &'a str, lines: &'a [InputLine]) -> Self {
+        let location = ErrorLocation::new(filename);
+        ScenariosIter { location, lines }
     }
 
     /// Continue parsing the file until the next header line or EOF.
@@ -138,48 +114,68 @@ impl<'a, F: BufRead> ScenariosIter<'a, F> {
     /// # Errors
     /// * `io::Error` if a line cannot be read.
     /// * `inputline::SyntaxError` if a line cannot be interpreted.
-    fn read_next_section(&mut self) -> Result<Option<Scenario>, ErrorKind> {
-        // We apply a similar strategy as in `skip_to_next_header`.
-        // The `take()` method leaves a `None` in `next_header`. This
-        // way, if an error occurs, the iterator will think it is
-        // exhausted and yield no further items.
-        let mut result = match self.next_header.take() {
-            // There was a header, start a new scenario.
-            Some(header) => Scenario::new(header)?,
-            // There was no header, we are exhausted.
+    fn next_scenario(&mut self) -> Result<Option<Scenario<'a>>, ErrorKind> {
+        let mut scenario = match self.next_header_line()? {
+            Some(line) => Scenario::new(line)?,
             None => return Ok(None),
         };
-        // Iterate over lines and interpret them.
-        while let Some(line) = self.next_line() {
-            match line?.parse::<InputLine>()? {
+        while let Some((name, value)) = self.next_definition_line() {
+            scenario.add_variable(name, value)?;
+        }
+        Ok(Some(scenario))
+    }
+
+    /// Fetches the next header line, skipping over comments.
+    ///
+    /// # Errors
+    /// If a definition line is found, the line counter is still
+    /// incremented, but a `ScenarioError::UnexpectedVarDef` is
+    /// returned.
+    fn next_header_line(&mut self) -> Result<Option<&'a str>, ErrorKind> {
+        while let Some(line) = self.lines.get(self.location.lineno) {
+            self.location.lineno += 1;
+            match *line {
+                InputLine::Header(ref line) => return Ok(Some(line.as_str())),
+                InputLine::Definition(ref name, _) => {
+                    return Err(ErrorKind::UnexpectedVarDef(name.to_owned()));
+                },
                 InputLine::Comment => {},
-                InputLine::Header(name) => {
-                    // We found the next header. We save it (thus
-                    // "unpoisoning" the iterator) and break out of the
-                    // loop.
-                    self.next_header = Some(name);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Fetches the next definition line.
+    ///
+    /// Comment lines are skipped over. If a header line is
+    /// encountered, `None` is returned and the line counter is *not*
+    /// incremented. In other words, calling `next_line()` after this
+    /// method will give eitehr `None` or `Some(InputLine::Header)`.
+    fn next_definition_line(&mut self) -> Option<(&'a str, &'a str)> {
+        while let Some(line) = self.lines.get(self.location.lineno) {
+            match *line {
+                InputLine::Header(_) => {
+                    // Leave *without* moving to the next line.
                     break;
                 },
-                InputLine::Definition(name, value) => {
-                    result.add_variable(name, value)?;
+                InputLine::Definition(ref name, ref value) => {
+                    self.location.lineno += 1;
+                    return Some((name, value));
+                },
+                InputLine::Comment => {
+                    self.location.lineno += 1;
                 },
             }
         }
-        Ok(Some(result))
-    }
-
-    /// Fetches the next line and increments the current line counter.
-    fn next_line(&mut self) -> Option<io::Result<String>> {
-        self.location.lineno += 1;
-        self.lines.next()
+        None
     }
 }
 
-impl<'a, F: BufRead> Iterator for ScenariosIter<'a, F> {
-    type Item = Result<Scenario, ParseError>;
+impl<'a> Iterator for ScenariosIter<'a> {
+    type Item = Result<Scenario<'a>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.read_next_section().context(self.location) {
+        match self.next_scenario().context(self.location) {
             Ok(None) => None,
             Ok(Some(scenario)) => Some(Ok(scenario)),
             Err(context) => Some(Err(ParseError::from(context))),
@@ -301,6 +297,17 @@ impl Error for ParseError {
 }
 
 
+// TODO: Add this test to ScenarioFile::new()! Add a unit test for that!
+/// Returns `false` if two of the given `scenarios` have the same name.
+fn are_names_unique<'a, I>(scenarios: I) -> bool
+where
+    I: 'a + IntoIterator<Item = &'a Scenario<'a>>,
+{
+    let mut names = ::std::collections::HashSet::new();
+    scenarios.into_iter().all(|s| names.insert(s.name()))
+}
+
+
 quick_error! {
     /// Any type of error that occurs during parsing of scenario files.
     #[derive(Debug)]
@@ -323,7 +330,7 @@ quick_error! {
             cause(err)
             from()
         }
-        UnexpectedVardef(name: String) {
+        UnexpectedVarDef(name: String) {
             description("variable definition before the first header")
             display(err) -> ("{}: \"{}\"", err.description(), name)
         }
@@ -339,8 +346,8 @@ mod tests {
     use std::io::Cursor;
 
 
-    fn get_scenarios(contents: &str) -> Result<Vec<Scenario>, ParseError> {
-        from_named_buffer(Cursor::new(contents), "<memory>")
+    fn get_scenarios(contents: &str) -> Result<ScenarioFile, ParseError> {
+        ScenarioFile::new(Cursor::new(contents), "<memory>")
     }
 
     fn assert_vars(s: &Scenario, variables: &[(&str, &str)]) {
@@ -349,9 +356,7 @@ mod tests {
             .iter()
             .map(|&(name, _)| name)
             .collect::<HashSet<_>>();
-        let actual_names = s.variable_names()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
+        let actual_names = s.variable_names().cloned().collect::<HashSet<_>>();
         assert_eq!(expected_names, actual_names);
         // Then check that the values are equal, too.
         for &(name, value) in variables {
@@ -379,21 +384,45 @@ mod tests {
         let output = get_scenarios(file).unwrap();
         let mut output = output.iter();
 
-        let the_scenario = output.next().unwrap();
+        let the_scenario = output
+            .next()
+            .expect("no scenario")
+            .expect("scenario error");
         assert_eq!(the_scenario.name(), "First Scenario");
         let the_variables = [("aaaa", "1"), ("bbbb", "8"), ("cdcd", "complicated value")];
-        assert_vars(the_scenario, &the_variables);
+        assert_vars(&the_scenario, &the_variables);
 
-        let the_scenario = output.next().unwrap();
+        let the_scenario = output
+            .next()
+            .expect("no scenario")
+            .expect("scenario error");
         assert_eq!(the_scenario.name(), "Second Scenario");
         let the_variables = [("aaaa", "8"), ("bbbb", "1"), ("cdcd", "lesscomplicated")];
-        assert_vars(the_scenario, &the_variables);
+        assert_vars(&the_scenario, &the_variables);
 
-        let the_scenario = output.next().unwrap();
+        let the_scenario = output
+            .next()
+            .expect("no scenario")
+            .expect("scenario error");
         assert_eq!(the_scenario.name(), "Third Scenario");
-        assert_vars(the_scenario, &[]);
+        assert_vars(&the_scenario, &[]);
 
         assert!(output.next().is_none());
+    }
+
+    #[test]
+    fn test_unique_names() {
+        let file = get_scenarios("[first]\n[second]\n[third]\n").unwrap();
+        let scenarios = file.iter().collect::<Result<Vec<_>, _>>().unwrap();
+        assert!(are_names_unique(scenarios.iter()));
+    }
+
+    #[test]
+    fn test_non_unique_names() {
+        let file = get_scenarios("[first]\n[second]\n[third]\n[second]").unwrap();
+        let scenarios = file.iter().collect::<Result<Vec<_>, _>>().unwrap();
+        assert!(!are_names_unique(scenarios.iter()));
+
     }
 
     #[test]
@@ -414,35 +443,33 @@ mod tests {
         varname = value
         varname = other value
         ";
-        assert_eq!(
-            get_scenarios(file).unwrap_err().to_string(),
-            expected_message
-        );
+        let file = get_scenarios(file).unwrap();
+        let scenarios = file.iter().collect::<Result<Vec<_>, _>>();
+        assert_eq!(scenarios.unwrap_err().to_string(), expected_message);
     }
 
+    #[test]
+    fn test_invalid_header() {
+        let expected_message = "<memory>:2: syntax error: text after closing bracket \"]\" of a \
+                                header line: \"[key] = value\"";
+        let file = get_scenarios("[scenario]\n[key] = value");
+        assert_eq!(file.unwrap_err().to_string(), expected_message);
+    }
 
     #[test]
     fn test_invalid_variable_name() {
-        let expected_message = "<memory>:2: syntax error: text after closing bracket \"]\" of a \
-                                header line: \"[key] = value\"";
-        let file = "[scenario]\n[key] = value";
-        assert_eq!(
-            get_scenarios(file).unwrap_err().to_string(),
-            expected_message
-        );
+        let expected_message = "<memory>:2: invalid variable name: \"ß\"";
+        let file = get_scenarios("[scenario]\nß = ss").unwrap();
+        let scenarios = file.iter().collect::<Result<Vec<_>, _>>();
+        assert_eq!(scenarios.unwrap_err().to_string(), expected_message);
     }
 
     #[test]
     fn test_invalid_scenario_name() {
         let expected_message = "<memory>:3: invalid scenario name: \"\"";
-        let file = r"[scenario]
-        a = b
-        []
-        ";
-        assert_eq!(
-            get_scenarios(file).unwrap_err().to_string(),
-            expected_message
-        );
+        let file = get_scenarios("[scenario]\na = b\n[]\n").unwrap();
+        let scenarios = file.iter().collect::<Result<Vec<_>, _>>();
+        assert_eq!(scenarios.unwrap_err().to_string(), expected_message);
     }
 
     #[test]
@@ -455,24 +482,8 @@ mod tests {
         # fifth line
         a = b
         ";
-        assert_eq!(
-            get_scenarios(file).unwrap_err().to_string(),
-            expected_message
-        );
-    }
-
-    #[test]
-    fn test_unique_names() {
-        let file = "[first]\n[second]\n[third]\n";
-        let output = get_scenarios(file).unwrap();
-        assert!(are_names_unique(&output));
-    }
-
-    #[test]
-    fn test_non_unique_names() {
-        let file = "[first]\n[second]\n[third]\n[second]";
-        let output = get_scenarios(file).unwrap();
-        assert!(!are_names_unique(&output));
-
+        let file = get_scenarios(file).unwrap();
+        let scenarios = file.iter().collect::<Result<Vec<_>, _>>();
+        assert_eq!(scenarios.unwrap_err().to_string(), expected_message);
     }
 }
