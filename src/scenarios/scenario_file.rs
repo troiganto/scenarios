@@ -3,8 +3,8 @@ use std::fs::File;
 use std::error::Error;
 use std::io::{self, BufRead};
 use std::fmt::{self, Display};
-use std::collections::HashSet;
 use std::borrow::{Borrow, ToOwned};
+use std::collections::hash_map::{HashMap, Entry};
 
 use quick_error::{Context, ResultExt};
 
@@ -28,7 +28,7 @@ impl<'a> ScenarioFile<'a> {
     /// See `new()` for more information.
     pub fn from_file_or_stdin(path: &str, is_strict: bool) -> Result<ScenarioFile, ParseError> {
         let stdin = io::stdin();
-        if path.borrow() == "-" {
+        if path == "-" {
             Self::new(stdin.lock(), "<stdin>", is_strict)
         } else {
             let file = File::open(path).context(ErrorLocation::new(path))?;
@@ -73,15 +73,26 @@ impl<'a> ScenarioFile<'a> {
 
     /// Returns an error if two header lines have the same content.
     fn check_for_duplicate_headers(&self) -> Result<(), ParseError> {
-        let mut seen_headers = HashSet::new();
+        let mut seen_headers = HashMap::new();
         let mut loc = ErrorLocation::new(self.filename);
         for line in self.lines.iter() {
             loc.lineno += 1;
+            // We are only interested in header lines. If a header line
+            // has not been seen before, we note its content and line
+            // number. If we *have* seen it before, we build an error
+            // from the header line's content, the current line number
+            // and the line number of the previous occurrence.
             if let Some(header) = line.header() {
-                let is_unique = seen_headers.insert(header);
-                if !is_unique {
-                    Err(ErrorKind::ScenarioExists(header.to_owned()))
-                        .context(loc)?;
+                match seen_headers.entry(header) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(loc.lineno);
+                    },
+                    Entry::Occupied(entry) => {
+                        let header = header.to_owned();
+                        let previous_lineno = *entry.get();
+                        Err(ErrorKind::ScenarioExists(header, previous_lineno))
+                            .context(loc)?;
+                    },
                 }
             }
         }
@@ -333,9 +344,10 @@ quick_error! {
             description("variable definition before the first header")
             display(err) -> ("{}: \"{}\"", err.description(), name)
         }
-        ScenarioExists(name: String) {
+        ScenarioExists(name: String, previous_lineno: usize) {
             description("scenario already exists")
-            display(err) -> ("{}: \"{}\"", err.description(), name)
+            display(err) -> ("{}: \"{}\" (first occurrence on line {})",
+                             err.description(), name, previous_lineno)
         }
     }
 }
@@ -411,8 +423,9 @@ mod tests {
 
     #[test]
     fn test_non_unique_names() {
-        let expected_message = "<memory>:4: scenario already exists: \"second\"";
-        let file = "[first]\n[second]\n[third]\n[second]";
+        let expected_message = "<memory>:5: scenario already exists: \"second\" (first occurrence \
+                                on line 2)";
+        let file = "[first]\n[second]\n\n[third]\n[second]";
         assert_eq!(
             get_scenarios(file).unwrap_err().to_string(),
             expected_message
@@ -421,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_non_unique_names_allowed() {
-        let file = get_scenarios_lax("[first]\n[second]\n[third]\n[second]").unwrap();
+        let file = get_scenarios_lax("[first]\n[second]\n\n[third]\n[second]").unwrap();
         let scenarios = file.iter().collect::<Result<Vec<_>, _>>().unwrap();
         let names: Vec<&str> = scenarios.iter().map(Scenario::name).collect();
         assert_eq!(names, ["first", "second", "third", "second"]);
