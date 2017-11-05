@@ -388,33 +388,25 @@ mod tests {
 
             [Third Scenario]
             ";
-        let output = get_scenarios(file).unwrap();
-        let mut output = output.iter();
+        let file = get_scenarios(file).unwrap();
+        let scenarios = file.iter().collect::<Result<Vec<_>, _>>().unwrap();
+        let mut scenarios = scenarios.iter();
 
-        let the_scenario = output
-            .next()
-            .expect("no scenario")
-            .expect("scenario error");
-        assert_eq!(the_scenario.name(), "First Scenario");
+        let the_scenario = scenarios.next().unwrap();
         let the_variables = [("aaaa", "1"), ("bbbb", "8"), ("cdcd", "complicated value")];
+        assert_eq!(the_scenario.name(), "First Scenario");
         assert_vars(&the_scenario, &the_variables);
 
-        let the_scenario = output
-            .next()
-            .expect("no scenario")
-            .expect("scenario error");
-        assert_eq!(the_scenario.name(), "Second Scenario");
+        let the_scenario = scenarios.next().unwrap();
         let the_variables = [("aaaa", "8"), ("bbbb", "1"), ("cdcd", "lesscomplicated")];
+        assert_eq!(the_scenario.name(), "Second Scenario");
         assert_vars(&the_scenario, &the_variables);
 
-        let the_scenario = output
-            .next()
-            .expect("no scenario")
-            .expect("scenario error");
+        let the_scenario = scenarios.next().unwrap();
         assert_eq!(the_scenario.name(), "Third Scenario");
         assert_vars(&the_scenario, &[]);
 
-        assert!(output.next().is_none());
+        assert!(scenarios.next().is_none());
     }
 
     #[test]
