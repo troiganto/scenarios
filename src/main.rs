@@ -73,11 +73,12 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     let combined_scenarios =
         cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_options));
     if args.is_present("command_line") {
-        CommandLineHandler::new(&args)?
-            .handle(combined_scenarios)
+        CommandLineHandler::new(&args)
+            .handle(combined_scenarios)?;
     } else {
-        handle_printing(&args, combined_scenarios)
+        handle_printing(&args, combined_scenarios)?;
     }
+    Ok(())
 }
 
 
@@ -121,48 +122,41 @@ impl<'a> CommandLineHandler<'a> {
     ///
     /// This reads the parsed command-line arguments and initializes
     /// the fields of this struct from them.
-    ///
-    /// # Errors
-    /// This fails if either `max_num_tokens_from_args()` or
-    /// `command_line_from_args()` fails.
-    pub fn new(args: &'a clap::ArgMatches) -> Result<Self, Error> {
-        let handler = CommandLineHandler {
+    pub fn new(args: &'a clap::ArgMatches) -> Self {
+        CommandLineHandler {
             keep_going: args.is_present("keep_going"),
-            command_line: Self::command_line_from_args(args)?,
-            tokens: consumers::TokenStock::new(Self::max_num_tokens_from_args(args)?),
+            command_line: Self::command_line_from_args(args),
+            tokens: consumers::TokenStock::new(Self::max_num_tokens_from_args(args)),
             children: consumers::ProcessPool::new(),
-        };
-        Ok(handler)
+        }
     }
 
-    /// Creates a `CommandLine` froom `args`.
-    ///
-    /// # Errors
-    /// This fails if no or an empty command line was given.
-    fn command_line_from_args(args: &'a clap::ArgMatches) -> Result<CommandLine<&'a str>, Error> {
+    /// Creates a `CommandLine` from `args`.
+    fn command_line_from_args(args: &'a clap::ArgMatches) -> CommandLine<&'a str> {
         let options = commandline::Options {
             is_strict: !args.is_present("lax"),
             ignore_env: args.is_present("ignore_env"),
             add_scenarios_name: !args.is_present("no_export_name"),
             insert_name_in_args: !args.is_present("no_insert_name"),
         };
+        // This is only called if the argument `command_line` is
+        // present. And since it's a positional argument, i.e. not an
+        // --option, being present also means not being empty. Hence,
+        // it is safe to unwrap here.
         args.values_of("command_line")
             .and_then(|argv| consumers::CommandLine::with_options(argv, options))
-            .ok_or(Error::NoCommandLine)
+            .unwrap()
     }
 
     /// Parses and interprets the `--jobs` option.
-    ///
-    /// # Errors
-    /// This fails when `--jobs` is given a value that cannot be parsed
-    /// as an unsigned integer.
-    fn max_num_tokens_from_args(args: &clap::ArgMatches) -> Result<usize, Error> {
+    fn max_num_tokens_from_args(args: &clap::ArgMatches) -> usize {
         if let Some(num) = args.value_of("jobs") {
-            num.parse::<usize>().map_err(Error::from)
+            // We can unwrap here because clap validates --jobs for us.
+            num.parse::<usize>().unwrap()
         } else if args.is_present("jobs") {
-            Ok(num_cpus::get())
+            num_cpus::get()
         } else {
-            Ok(1)
+            1
         }
     }
 
@@ -218,9 +212,10 @@ impl<'a> CommandLineHandler<'a> {
             child.into_result()
         };
         for scenario in scenarios {
+            let scenario = scenario?;
             let token = pool::spin_wait_for_token(&mut self.tokens, &mut self.children, &reaper)?;
             let child = self.command_line
-                .with_scenario(scenario?)?
+                .with_scenario(scenario)?
                 .spawn_or_return_token(token, &mut self.tokens)?;
             self.children.push(child);
         }
