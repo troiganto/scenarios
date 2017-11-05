@@ -1,8 +1,9 @@
 
 use std::fs::File;
 use std::error::Error;
-use std::fmt::{self, Display};
 use std::io::{self, BufRead};
+use std::fmt::{self, Display};
+use std::collections::HashSet;
 use std::borrow::{Borrow, ToOwned};
 
 use quick_error::{Context, ResultExt};
@@ -22,33 +23,31 @@ impl<'a> ScenarioFile<'a> {
     /// Like `from_file`, but also handles `path == "-"`.
     ///
     /// If `path` equals `"-"`, this reads scenarios from stdin.
-    /// Otherwise,
-    /// it treats `path` like a regular file path and calls `from_file`.
-    pub fn from_file_or_stdin(path: &str) -> Result<ScenarioFile, ParseError> {
+    /// Otherwise, it reads from the regular file located at `path`.
+    ///
+    /// See `new()` for more information.
+    pub fn from_file_or_stdin(path: &str, is_strict: bool) -> Result<ScenarioFile, ParseError> {
         let stdin = io::stdin();
         if path.borrow() == "-" {
-            Self::new(stdin.lock(), "<stdin>")
+            Self::new(stdin.lock(), "<stdin>", is_strict)
         } else {
-            Self::from_file(path)
+            let file = File::open(path).context(ErrorLocation::new(path))?;
+            let file = io::BufReader::new(file);
+            Self::new(file, path, is_strict)
         }
     }
 
-    /// Opens a file and reads scenarios from it.
-    ///
-    /// If an error occurs, the error contains the path of the offending
-    /// file.
-    pub fn from_file(path: &str) -> Result<ScenarioFile, ParseError> {
-        let path = path.borrow();
-        let file = File::open(path).context(ErrorLocation::new(path))?;
-        let file = io::BufReader::new(file);
-        Self::new(file, path)
-    }
-
     /// Reads scenarios from a given buffered reader.
-    pub fn new<F: BufRead>(reader: F, filename: &str) -> Result<ScenarioFile, ParseError> {
+    pub fn new<F>(reader: F, filename: &str, is_strict: bool) -> Result<ScenarioFile, ParseError>
+    where
+        F: BufRead,
+    {
         let lines = Vec::new();
         let mut file = ScenarioFile { filename, lines };
         file.read_from(reader)?;
+        if is_strict {
+            file.check_for_duplicate_headers()?;
+        }
         Ok(file)
     }
 
@@ -57,15 +56,36 @@ impl<'a> ScenarioFile<'a> {
         let mut loc = ErrorLocation::new(self.filename);
         let mut buffer = String::new();
         loop {
+            // Increase the line number first. If we did this at the
+            // end of the loop, an error in the first line would be
+            // reported as "error in line 0".
             loc.lineno += 1;
             let num_bytes = reader.read_line(&mut buffer).context(loc)?;
             if num_bytes == 0 {
-                return Ok(());
+                break;
             }
             let line = buffer.parse::<InputLine>().context(loc)?;
             self.lines.push(line);
             buffer.clear();
         }
+        Ok(())
+    }
+
+    /// Returns an error if two header lines have the same content.
+    fn check_for_duplicate_headers(&self) -> Result<(), ParseError> {
+        let mut seen_headers = HashSet::new();
+        let mut loc = ErrorLocation::new(self.filename);
+        for line in self.lines.iter() {
+            loc.lineno += 1;
+            if let Some(header) = line.header() {
+                let is_unique = seen_headers.insert(header);
+                if !is_unique {
+                    Err(ErrorKind::ScenarioExists(header.to_owned()))
+                        .context(loc)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn filename(&self) -> &str {
@@ -287,17 +307,6 @@ impl Error for ParseError {
 }
 
 
-// TODO: Add this test to ScenarioFile::new()! Add a unit test for that!
-/// Returns `false` if two of the given `scenarios` have the same name.
-fn are_names_unique<'a, I>(scenarios: I) -> bool
-where
-    I: 'a + IntoIterator<Item = &'a Scenario<'a>>,
-{
-    let mut names = ::std::collections::HashSet::new();
-    scenarios.into_iter().all(|s| names.insert(s.name()))
-}
-
-
 quick_error! {
     /// Any type of error that occurs during parsing of scenario files.
     #[derive(Debug)]
@@ -324,6 +333,10 @@ quick_error! {
             description("variable definition before the first header")
             display(err) -> ("{}: \"{}\"", err.description(), name)
         }
+        ScenarioExists(name: String) {
+            description("scenario already exists")
+            display(err) -> ("{}: \"{}\"", err.description(), name)
+        }
     }
 }
 
@@ -337,7 +350,11 @@ mod tests {
 
 
     fn get_scenarios(contents: &str) -> Result<ScenarioFile, ParseError> {
-        ScenarioFile::new(Cursor::new(contents), "<memory>")
+        ScenarioFile::new(Cursor::new(contents), "<memory>", true)
+    }
+
+    fn get_scenarios_lax(contents: &str) -> Result<ScenarioFile, ParseError> {
+        ScenarioFile::new(Cursor::new(contents), "<memory>", false)
     }
 
     fn assert_vars(s: &Scenario, variables: &[(&str, &str)]) {
@@ -401,18 +418,21 @@ mod tests {
     }
 
     #[test]
-    fn test_unique_names() {
-        let file = get_scenarios("[first]\n[second]\n[third]\n").unwrap();
-        let scenarios = file.iter().collect::<Result<Vec<_>, _>>().unwrap();
-        assert!(are_names_unique(scenarios.iter()));
+    fn test_non_unique_names() {
+        let expected_message = "<memory>:4: scenario already exists: \"second\"";
+        let file = "[first]\n[second]\n[third]\n[second]";
+        assert_eq!(
+            get_scenarios(file).unwrap_err().to_string(),
+            expected_message
+        );
     }
 
     #[test]
-    fn test_non_unique_names() {
-        let file = get_scenarios("[first]\n[second]\n[third]\n[second]").unwrap();
+    fn test_non_unique_names_allowed() {
+        let file = get_scenarios_lax("[first]\n[second]\n[third]\n[second]").unwrap();
         let scenarios = file.iter().collect::<Result<Vec<_>, _>>().unwrap();
-        assert!(!are_names_unique(scenarios.iter()));
-
+        let names: Vec<&str> = scenarios.iter().map(Scenario::name).collect();
+        assert_eq!(names, ["first", "second", "third", "second"]);
     }
 
     #[test]

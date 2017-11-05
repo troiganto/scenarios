@@ -53,23 +53,23 @@ fn main() {
 fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
+    let is_strict = !args.is_present("lax");
     let scenario_files: Vec<ScenarioFile> = args.values_of("input")
         .ok_or(Error::NoScenarios)?
-        .map(ScenarioFile::from_file_or_stdin)
+        .map(|path| ScenarioFile::from_file_or_stdin(path, is_strict))
         .collect::<Result<_, _>>()?;
     let all_scenarios: Vec<Vec<Scenario>> = scenario_files
         .iter()
         .map(|f| f.iter().collect::<Result<_, _>>())
         .collect::<Result<_, _>>()?;
 
-    // Read the scenario-merging options.
+    // Go through all possible combinations of scenarios and a merged
+    // scenario for each of them. Hand these merged scenarios then over
+    // to the correct handler.
     let merge_options = scenarios::MergeOptions {
         delimiter: args.value_of("delimiter").expect("default value"),
-        is_strict: !args.is_present("lax"),
+        is_strict: is_strict,
     };
-
-    // Use the merger to get a list of all combinations of scenarios.
-    // Hand these then over to the correct handler.
     let combined_scenarios =
         cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_options));
     if args.is_present("command_line") {
