@@ -17,16 +17,26 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 /// This type is returned by `CommandLine` and represents a process
 /// that is ready to start. Starting it requires a `PoolToken`,
 /// however, to limit the number of processes that can run in parallel.
+///
+/// Note that the fields `name` and `program` are only used to provide
+/// meaningful error messages if something goes wrong.
 #[derive(Debug)]
-pub struct PreparedChild {
+pub struct PreparedChild<'a> {
+    /// The name of the corresponding scenario.
     name: String,
+    /// The name of the running scenario.
+    program: &'a str,
     command: Command,
 }
 
-impl PreparedChild {
+impl<'a> PreparedChild<'a> {
     /// Creates a new `PreparedChild`.
-    pub fn new(name: String, command: Command) -> Self {
-        PreparedChild { name, command }
+    pub fn new(name: String, program: &'a str, command: Command) -> Self {
+        PreparedChild {
+            name,
+            program,
+            command,
+        }
     }
 
     /// Turns the `PreparedChild` into a `RunningChild`.
@@ -43,9 +53,10 @@ impl PreparedChild {
         token: PoolToken,
     ) -> ::std::result::Result<RunningChild, (Error, PoolToken)> {
         let name = self.name;
+        let program = self.program;
         match self.command.spawn() {
             Ok(child) => Ok(RunningChild { name, child, token }),
-            Err(err) => Err((Error::with_io_error(name, err), token)),
+            Err(err) => Err((Error::with_spawn_error(name, program, err), token)),
         }
     }
 
@@ -121,7 +132,7 @@ impl RunningChild {
         let name = self.name;
         let result = match self.child.wait() {
             Ok(status) => Ok(FinishedChild { name, status }),
-            Err(err) => Err(Error::with_io_error(name, err)),
+            Err(err) => Err(Error::with_wait_error(name, err)),
         };
         (result, self.token)
     }
@@ -169,15 +180,27 @@ pub struct Error {
 }
 
 impl Error {
-    /// Constructor from `io::Error`.
-    fn with_io_error<S: Into<String>>(name: S, err: io::Error) -> Self {
+    /// Create an error of kind `SpawnError`.
+    fn with_spawn_error<S1, S2>(name: S1, program: S2, err: io::Error) -> Self
+    where
+        S1: Into<String>,
+        S2: Into<String>,
+    {
         Error {
             name: name.into(),
-            kind: ErrorKind::IoError(err),
+            kind: ErrorKind::SpawnError(program.into(), err),
         }
     }
 
-    /// Constructor from `ExitStatus`.
+    /// Create an error of kind `WaitError`.
+    fn with_wait_error<S: Into<String>>(name: S, err: io::Error) -> Self {
+        Error {
+            name: name.into(),
+            kind: ErrorKind::WaitError(err),
+        }
+    }
+
+    /// Create an error of kind `ChildFailed`.
     fn with_exit_status<S: Into<String>>(name: S, status: ExitStatus) -> Self {
         Error {
             name: name.into(),
@@ -198,7 +221,7 @@ impl Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "scenario \"{}\": {}", self.name, self.kind)
+        write!(f, "{}\n\tin scenario \"{}\"", self.kind, self.name)
     }
 }
 
@@ -229,9 +252,15 @@ quick_error! {
     /// The kinds of errors that can be caused in this module.
     #[derive(Debug)]
     pub enum ErrorKind {
-        IoError(err: io::Error) {
-            description(err.description())
-            display("{}", err)
+        SpawnError(program: String, err: io::Error) {
+            description("could not execute command")
+            display(self_) -> ("{} \"{}\": {}", self_.description(), program, err)
+            cause(err)
+            context(program: AsRef<str>, err: io::Error) -> (program.as_ref().to_owned(), err)
+        }
+        WaitError(err: io::Error) {
+            description("could not check child process's status")
+            display(self_) -> ("{}: {}", self_.description(), err)
             cause(err)
             from()
         }

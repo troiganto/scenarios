@@ -186,13 +186,16 @@ impl<S: AsRef<str>> CommandLine<S> {
     pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild> {
         let (name, variables) = scenario.into_parts();
         let command = self.create_command(variables, &name)?;
-        Ok(PreparedChild::new(name.into_owned(), command))
+        let child = PreparedChild::new(name.into_owned(), self.program().as_ref(), command);
+        Ok(child)
     }
 
     /// Like `with_scenario`, but does not consume the `Scenario`.
     pub fn with_scenario_ref(&self, scenario: &Scenario) -> Result<PreparedChild> {
-        self.create_command(scenario.variables(), scenario.name())
-            .map(|command| PreparedChild::new(scenario.name().to_owned(), command),)
+        let name = scenario.name();
+        let command = self.create_command(scenario.variables(), name)?;
+        let child = PreparedChild::new(name.to_owned(), self.program().as_ref(), command);
+        Ok(child)
     }
 
     /// Internal implementation of `with_scenario`.
