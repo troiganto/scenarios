@@ -7,39 +7,7 @@ use std::collections::hash_map::{self, HashMap};
 use quick_error::ResultExt;
 
 
-/// Wrapper type around customization options to `Scenario::merge()`.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MergeOptions<'a> {
-    /// A string used to join the scenario names together.
-    ///
-    /// The default is `", "`, a comma followed by a space.
-    pub delimiter: &'a str,
-    /// Flag that enables strict mode.
-    ///
-    /// In strict mode, merging fails if two scenarios define the same
-    /// variable. By default, strict mode is enabled.
-    pub is_strict: bool,
-}
-
-impl<'a> MergeOptions<'a> {
-    fn new(delimiter: &'a str, is_strict: bool) -> Self {
-        MergeOptions {
-            delimiter,
-            is_strict,
-        }
-    }
-}
-
-impl<'a> Default for MergeOptions<'a> {
-    fn default() -> Self {
-        MergeOptions {
-            delimiter: ", ",
-            is_strict: true,
-        }
-    }
-}
-
-
+/// Convenience alias for `std::result::Result`.
 pub type Result<T> = ::std::result::Result<T, ScenarioError>;
 
 
@@ -213,6 +181,39 @@ impl<'a> Scenario<'a> {
 impl<'a> Display for Scenario<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Scenario \"{}\"", self.name)
+    }
+}
+
+
+/// Wrapper type around customization options to `Scenario::merge()`.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MergeOptions<'a> {
+    /// A string used to join the scenario names together.
+    ///
+    /// The default is `", "`, a comma followed by a space.
+    pub delimiter: &'a str,
+    /// Flag that enables strict mode.
+    ///
+    /// In strict mode, merging fails if two scenarios define the same
+    /// variable. By default, strict mode is enabled.
+    pub is_strict: bool,
+}
+
+impl<'a> MergeOptions<'a> {
+    fn new(delimiter: &'a str, is_strict: bool) -> Self {
+        MergeOptions {
+            delimiter,
+            is_strict,
+        }
+    }
+}
+
+impl<'a> Default for MergeOptions<'a> {
+    fn default() -> Self {
+        MergeOptions {
+            delimiter: ", ",
+            is_strict: true,
+        }
     }
 }
 
