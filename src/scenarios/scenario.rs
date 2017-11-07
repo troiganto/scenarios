@@ -1,5 +1,6 @@
 
 use std::error::Error;
+use std::iter::FromIterator;
 use std::fmt::{self, Display};
 use std::borrow::{Borrow, Cow};
 use std::collections::hash_map::{self, HashMap};
@@ -110,17 +111,34 @@ impl<'a> Scenario<'a> {
     pub fn merge_all<I>(scenarios: I, options: MergeOptions) -> Result<Self>
     where
         I: IntoIterator,
+        I::IntoIter: Clone,
         I::Item: Borrow<Self>,
     {
         let mut scenarios = scenarios.into_iter();
-        let mut accumulator = match scenarios.next() {
-            Some(scenario) => scenario.borrow().clone(),
-            None => return Err(ScenarioError::NoScenarios),
-        };
-        for scenario in scenarios {
-            accumulator.merge(scenario.borrow(), options)?;
+        let backup_iter = scenarios.clone();
+        let mut accumulator = scenarios
+            .next()
+            .ok_or(ScenarioError::NoScenarios)?
+            .borrow()
+            .clone();
+        // Go over each scenario `s` and merge it into `accumulator`. Abort on
+        // the first error. (`Nothing` is a `()` that allows `collect`ing.)
+        let result: Result<Nothing> = scenarios
+            .map(|s| accumulator.merge(s.borrow(), options))
+            .collect();
+        match result {
+            Ok(Nothing) => Ok(accumulator),
+            Err(mut err) => {
+                // If a `StrictMergeFailed` error occurs, the `left` scenario is a
+                // merged intermediary. This is useless! Change it to the correct
+                // scenario name by searching through `scenarios` once more.
+                if let Some(info) = err.strict_merge_failed_info_mut() {
+                    info.left = name_of_first_scenario_with_variable(backup_iter, &info.varname)
+                        .unwrap();
+                }
+                Err(err)
+            },
         }
-        Ok(accumulator)
     }
 
     /// Merges another scenario into this one.
@@ -218,6 +236,29 @@ impl<'a> Default for MergeOptions<'a> {
 }
 
 
+/// Opaque elper type for `ScenarioError::StrictMergeFailed`.
+#[derive(Debug)]
+pub struct StrictMergeFailed {
+    varname: String,
+    left: String,
+    right: String,
+}
+
+
+/// A zero-sized type that implements `FromIterator`.
+///
+/// This allows us to call `Iterator::collect<Result<_>>` without
+/// creating a vector when item type of the iterator is `()`.
+struct Nothing;
+
+impl FromIterator<()> for Nothing {
+    fn from_iter<T: IntoIterator<Item = ()>>(iter: T) -> Self {
+        for _ in iter.into_iter() {}
+        Nothing
+    }
+}
+
+
 /// Tests if a character is a valid C identifier.
 ///
 /// C identifiers contain only the following characters:
@@ -246,6 +287,20 @@ fn is_c_identifier(s: &str) -> bool {
 }
 
 
+/// Finds a scenario that defines a variable and returns its name.
+///
+/// This is a helper function to `Scenario::merge_all()`.
+fn name_of_first_scenario_with_variable<'a, I>(mut scenarios: I, varname: &str) -> Option<String>
+where
+    I: Iterator,
+    I::Item: Borrow<Scenario<'a>>,
+{
+    scenarios
+        .find(|s| s.borrow().has_variable(varname))
+        .map(|s| s.borrow().name().to_owned())
+}
+
+
 quick_error! {
     /// Errors caused during building a scenario.
     #[derive(Debug)]
@@ -265,15 +320,37 @@ quick_error! {
         NoScenarios {
             description("scenario merge: no scenarios provided")
         }
-        StrictMergeFailed{varname: String, left: String, right: String} {
+        StrictMergeFailed(err: StrictMergeFailed) {
             description("conflicting variable definitions")
-            display(err) -> ("{}: \"{}\" defined by scenarios \"{}\" and \"{}\"",
-                             err.description(), varname, left, right)
-            context(left_right: (&'a str, &'a str), v: String) -> {
-                varname: v,
-                left: left_right.0.to_owned(),
-                right: left_right.1.to_owned()  // No trailing comma allowed here!
-            }
+            display("variable \"{}\" defined both in scenario \"{}\" and in scenario \"{}\"",
+                    err.varname, err.left, err.right)
+            context(left_right: (&'a str, &'a str), v: String) -> (
+                StrictMergeFailed {
+                    varname: v,
+                    left: left_right.0.to_owned(),
+                    right: left_right.1.to_owned(),
+                }
+            )
+        }
+    }
+}
+
+
+/// Private helper functions around `ScenarioError`.
+impl ScenarioError {
+    /// If the error is `StrictMergeFailed`, returns its data.
+    fn strict_merge_failed_info(&self) -> Option<&StrictMergeFailed> {
+        match *self {
+            ScenarioError::StrictMergeFailed(ref err) => Some(err),
+            _ => None,
+        }
+    }
+
+    /// If the error is `StrictMergeFailed`, returns its data.
+    fn strict_merge_failed_info_mut(&mut self) -> Option<&mut StrictMergeFailed> {
+        match *self {
+            ScenarioError::StrictMergeFailed(ref mut err) => Some(err),
+            _ => None,
         }
     }
 }
@@ -364,14 +441,27 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_error() {
-        let expected_message = "conflicting variable definitions: \"a\" defined by scenarios \
-                                \"A\" and \"B\"";
+    fn test_merge_error_two() {
+        let expected_message = "variable \"a\" defined both in scenario \"A\" and in scenario \
+                                \"B\"";
         let mut merged = make_dummy_scenario("A", &["a"]);
         let added = make_dummy_scenario("B", &["a"]);
         let error = merged
             .merge(&added, MergeOptions::default())
             .unwrap_err();
+        assert_eq!(expected_message, error.to_string());
+    }
+
+    #[test]
+    fn test_merge_error_three() {
+        let expected_message = "variable \"a\" defined both in scenario \"A\" and in scenario \
+                                \"C\"";
+        let scenarios = [
+            make_dummy_scenario("A", &["a"]),
+            make_dummy_scenario("B", &["b"]),
+            make_dummy_scenario("C", &["a"]),
+        ];
+        let error = Scenario::merge_all(&scenarios, MergeOptions::default()).unwrap_err();
         assert_eq!(expected_message, error.to_string());
     }
 
