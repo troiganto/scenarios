@@ -163,6 +163,29 @@ impl ProcessPool {
         FinishedIter::new(self)
     }
 
+    /// Waits for any child process to finish.
+    ///
+    /// This loops around until at least one child process is finished
+    /// and returns that process. This only returns `None` if the pool
+    /// is completely empty.
+    ///
+    /// # Errors
+    /// If waiting on any child fails, this function returns
+    /// `Some((Err(_), token))`.
+    pub fn wait_reap_one(&mut self) -> Option<(children::Result<FinishedChild>, PoolToken)> {
+        if self.is_empty() {
+            return None;
+        }
+        loop {
+            // `child` is only `None` if *no* child has finished. Wait.
+            let child = self.reap().next();
+            if child.is_some() {
+                return child;
+            }
+            thread::sleep(time::Duration::from_millis(10));
+        }
+    }
+
     /// Waits for all processes left in the queue to finish.
     ///
     /// This waits for all remaining children in this pool to finish

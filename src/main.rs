@@ -110,6 +110,8 @@ where
 struct CommandLineHandler<'a> {
     /// Flag read from --keep-going.
     keep_going: bool,
+    /// Flag read from --jobs.
+    is_parallel: bool,
     /// The command line that is executed for each scenario.
     command_line: consumers::CommandLine<&'a str>,
     /// Our stock of tokens for parallelism.
@@ -126,10 +128,12 @@ impl<'a> CommandLineHandler<'a> {
     /// This reads the parsed command-line arguments and initializes
     /// the fields of this struct from them.
     pub fn new(args: &'a clap::ArgMatches) -> Self {
+        let max_num_tokens = Self::max_num_tokens_from_args(args);
         CommandLineHandler {
             keep_going: args.is_present("keep_going"),
+            is_parallel: max_num_tokens > 1,
             command_line: Self::command_line_from_args(args),
-            tokens: consumers::TokenStock::new(Self::max_num_tokens_from_args(args)),
+            tokens: consumers::TokenStock::new(max_num_tokens),
             children: consumers::ProcessPool::new(),
             logger: logger::Logger::new(crate_name!(), args.is_present("quiet")),
         }
@@ -170,24 +174,30 @@ impl<'a> CommandLineHandler<'a> {
     /// all running child processes.
     ///
     /// # Errors
-    /// Same as `inner_loop()`.
+    /// Same as `inner_loop()`. While all errors are reported via
+    /// `self.logger`, only the first error is returned.
     pub fn handle<'s, I>(&mut self, scenarios: I) -> Result<(), Error>
     where
         I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
     {
         let run_result = self.inner_loop(scenarios);
-        // Reap all remaining children.
-        let finished_children = self.children.wait_and_reap_all();
-        // Here, the pool is empty and we can evaluate all possible errors.
-        // I/O errors always get evaluated, exit statuses only maybe.
-        run_result?;
-        for (child, _token) in finished_children {
-            let child = child?;
-            if !self.keep_going {
-                child.into_result()?;
+        // If run_result is Ok, it means the pool is empty. If it is `Err`, we
+        // must clean out the pool ourselves. Note that we log all errors, but
+        // do not return them.
+        if run_result.is_err() {
+            if self.is_parallel {
+                self.logger
+                    .log("Waiting for unfinished child processes ...")
+            }
+            while let Some((child, token)) = self.children.wait_reap_one() {
+                self.tokens.return_token(token);
+                // Coalesce `WaitError` and `ChildFailed` errors.
+                if let Err(err) = child.and_then(children::FinishedChild::into_result) {
+                    self.logger.log(&err.to_string());
+                }
             }
         }
-        Ok(())
+        run_result
     }
 
     /// The main loop of the program.
@@ -196,6 +206,13 @@ impl<'a> CommandLineHandler<'a> {
     /// into the pool `children`. If the maximum allowed number of
     /// child processes is running, this loop waits until one of them
     /// has finished.
+    ///
+    /// On the happy path, this function waits until all child
+    /// processes have terminated successfully and the pool
+    /// `self.children` is empty again. However, if an error occurs
+    /// that `inner_loop` cannot ignore, it returns immediately. In
+    /// that case, `self.children` may still contain child processes
+    /// and it is the task of the caller to clean them up.
     ///
     /// # Errors
     /// This function may fail if:
@@ -227,6 +244,11 @@ impl<'a> CommandLineHandler<'a> {
                 .with_scenario(scenario)?
                 .spawn_or_return_token(token, &mut self.tokens)?;
             self.children.push(child);
+        }
+        // No error so far, let's clean up the child process pool!
+        while let Some((child, token)) = self.children.wait_reap_one() {
+            self.tokens.return_token(token);
+            reaper(child?)?;
         }
         Ok(())
     }
