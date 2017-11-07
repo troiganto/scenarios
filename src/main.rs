@@ -7,6 +7,7 @@ extern crate num_cpus;
 extern crate quick_error;
 
 mod app;
+mod logger;
 mod scenarios;
 mod cartesian;
 mod consumers;
@@ -115,6 +116,8 @@ struct CommandLineHandler<'a> {
     tokens: consumers::TokenStock,
     /// A pool of currently-running processes.
     children: consumers::ProcessPool,
+    /// A logger that helps us print information to the user.
+    logger: logger::Logger<'static>,
 }
 
 impl<'a> CommandLineHandler<'a> {
@@ -128,6 +131,7 @@ impl<'a> CommandLineHandler<'a> {
             command_line: Self::command_line_from_args(args),
             tokens: consumers::TokenStock::new(Self::max_num_tokens_from_args(args)),
             children: consumers::ProcessPool::new(),
+            logger: logger::Logger::new(crate_name!(), args.is_present("quiet")),
         }
     }
 
@@ -204,12 +208,17 @@ impl<'a> CommandLineHandler<'a> {
     where
         I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
     {
-        // Copy `keep_going` to avoid borrowing `self` to the closure.
+        // These cumbersome bindings avoid borrowing `self` to the closure.
         let keep_going = self.keep_going;
-        let reaper = |child: children::FinishedChild| if keep_going {
+        let logger = &self.logger;
+        let reaper = |child: children::FinishedChild| {
+            if let Err(err) = child.into_result() {
+                logger.log(&err.to_string());
+                if !keep_going {
+                    return Err(err);
+                }
+            }
             Ok(())
-        } else {
-            child.into_result()
         };
         for scenario in scenarios {
             let scenario = scenario?;

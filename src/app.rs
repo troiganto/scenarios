@@ -17,6 +17,13 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("short_help")
              .short("h")
              .help("Print short help information."))
+        .arg(Arg::with_name("quiet")
+             .short("q")
+             .long("quiet")
+             .help("Suppress information when executing commands.")
+             .long_help("Suppress information during execution of \
+                         commands. Errors found in the given scenario \
+                         files are still printed to stderr."))
         .arg(Arg::with_name("delimiter")
              .short("d")
              .long("delimiter")
