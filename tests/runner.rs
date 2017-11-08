@@ -85,6 +85,7 @@ impl Runner {
     pub fn output(&mut self) -> RunResult {
         let output = self.command
             .env_clear()
+            .env("outer_variable", "1")
             .output()
             .expect("could not spawn");
         RunResult::new(output)

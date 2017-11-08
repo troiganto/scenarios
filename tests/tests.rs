@@ -113,3 +113,88 @@ mod printing {
         assert!(!output.status.success());
     }
 }
+
+mod environment {
+    use runner::Runner;
+
+    #[test]
+    fn test_insert_name() {
+        let expected = "-A1-\n-A2-\n";
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .args(&["--", "echo", "-{}-"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
+
+
+    #[test]
+    fn test_no_insert_name() {
+        let expected = "-{}-\n-{}-\n";
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg("--no-insert-name")
+            .args(&["--", "echo", "-{}-"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
+
+
+    #[test]
+    fn test_no_export_name() {
+        let expected = "outer_variable=1\n";
+        let output = Runner::new()
+            .scenario_file("one_empty.ini")
+            .arg("--no-export-name")
+            .args(&["--", "env"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
+
+
+    #[test]
+    fn test_ignore_env() {
+        let expected = "SCENARIOS_NAME=Empty\n";
+        let output = Runner::new()
+            .scenario_file("one_empty.ini")
+            .arg("--ignore-env")
+            .args(&["--", "env"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
+
+
+    #[test]
+    fn test_empty_env() {
+        let output = Runner::new()
+            .scenario_file("one_empty.ini")
+            .args(&["--ignore-env", "--no-export-name"])
+            .args(&["--", "env"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(output.status.success());
+    }
+
+
+    #[test]
+    fn test_non_empty_env() {
+        let expected = "a_var1=This conflicts with A1 and A2.\n";
+        let output = Runner::new()
+            .scenario_file("conflicts_with_a.ini")
+            .args(&["--ignore-env", "--no-export-name"])
+            .args(&["--", "env"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
+}
