@@ -3,7 +3,7 @@
 use std::env;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, ExitStatus, Output};
 
 
 /// The name of the executable being tested.
@@ -29,10 +29,10 @@ impl Runner {
     /// scenarios files are. If it can't find both of them, this
     /// function panics.
     pub fn new() -> Self {
-        let command = Command::new(guess_bin_path());
-        let mut tests_dir = env::current_dir().unwrap();
-        tests_dir.push("tests");
-        Runner { command, tests_dir }
+        Runner {
+            command: Command::new(guess_bin_path()),
+            tests_dir: guess_tests_dir_path(),
+        }
     }
 
     /// Adds an argument to pass to the program.
@@ -82,16 +82,36 @@ impl Runner {
 
 
     /// Runs the command and returns its output.
-    pub fn output(&mut self) -> Output {
-        self.command.env_clear().output().unwrap()
+    pub fn output(&mut self) -> RunResult {
+        let output = self.command
+            .env_clear()
+            .output()
+            .expect("could not spawn");
+        RunResult::new(output)
     }
 }
 
 
+pub struct RunResult {
+    pub status: ExitStatus,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl RunResult {
+    fn new(output: Output) -> Self {
+        RunResult {
+            status: output.status,
+            stdout: String::from_utf8(output.stdout).expect("stdout is not utf8"),
+            stderr: String::from_utf8(output.stderr).expect("stderr is not utf8"),
+        }
+    }
+}
+
 fn guess_tests_dir_path() -> PathBuf {
     // We pray to Ferris that the current working directory always is the
     // root of our project.
-    let mut tests_dir = env::current_dir().unwrap();
+    let mut tests_dir = env::current_dir().expect("could not get current directory");
     tests_dir.push("tests");
     if tests_dir.is_dir() {
         return tests_dir;
@@ -101,7 +121,7 @@ fn guess_tests_dir_path() -> PathBuf {
 
 
 fn guess_bin_path() -> PathBuf {
-    let mut executable = env::current_exe().unwrap();
+    let mut executable = env::current_exe().expect("could not get current executable");
     // First, we check the directory of the test executable.
     executable.pop();
     executable.push(PROGRAM_NAME);
