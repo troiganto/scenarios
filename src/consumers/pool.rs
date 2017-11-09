@@ -2,6 +2,7 @@
 use std::time;
 use std::thread;
 
+use super::tokens::{PoolToken, TokenStock};
 use super::children::{self, RunningChild, FinishedChild};
 
 
@@ -47,71 +48,6 @@ where
     }
 }
 
-/// Tokens returned by `TokenStock`.
-///
-/// The only purpose of these tokens is to be handed out and redeemed.
-/// This allows controlling how many jobs are running at any time.
-#[derive(Debug)]
-#[must_use]
-pub struct PoolToken(());
-
-/// A stock of `PoolToken`s.
-///
-/// This type allows predefining a set of tokens which may be given
-/// out, carried around, and later redeemed. The maximum number of
-/// available tokens is specified at construction and cannot be
-/// changed.
-///
-/// `ProcessPool` limits the number of child processes that can run at
-/// any time by requiring a token when accepting a new child process
-/// and by only returning said token once the child has finished
-/// running.
-#[derive(Debug)]
-pub struct TokenStock {
-    /// The number of tokens remaining in this stock.
-    num_tokens: usize,
-}
-
-impl TokenStock {
-    /// Creates a new stock with an initial size of `max_tokens`.
-    ///
-    /// # Panics
-    /// This panics if `max_tokens` is `0`.
-    pub fn new(max_tokens: usize) -> Self {
-        if max_tokens == 0 {
-            panic!("invalid maximum number of tokens: 0")
-        }
-        Self { num_tokens: max_tokens }
-    }
-
-    /// Returns the number of currently available tokens.
-    pub fn num_remaining(&self) -> usize {
-        self.num_tokens
-    }
-
-    /// Returns `Some(token)` if a token is available, otherwise `None`.
-    pub fn get_token(&mut self) -> Option<PoolToken> {
-        if self.num_tokens > 0 {
-            self.num_tokens -= 1;
-            Some(PoolToken(()))
-        } else {
-            None
-        }
-    }
-
-    /// Accepts a previously handed-out token back into the stock.
-    pub fn return_token(&mut self, _: PoolToken) {
-        self.num_tokens += 1;
-    }
-}
-
-impl Default for TokenStock {
-    /// The default for a token stock is to contain a single token.
-    fn default() -> Self {
-        Self::new(1)
-    }
-}
-
 
 /// A pool of processes which can run concurrently.
 ///
@@ -120,12 +56,9 @@ impl Default for TokenStock {
 /// child process that can run at a time.
 ///
 /// # Panics
-/// Waiting on a child processes and even just checking whether it has
-/// finished can cause a panic.
-///
-/// As a safety measure, `ProcessPool` also panics if it is dropped
-/// while still containing child processes. You must ensure that the
-/// pool is empty before leaving its scope, for example via
+/// As a safety measure, `ProcessPool` panics if it is dropped while
+/// still containing child processes. You must ensure that the pool is
+/// empty before leaving its scope, for example via
 /// `wait_and_reap_all()`.
 #[derive(Debug, Default)]
 pub struct ProcessPool {
