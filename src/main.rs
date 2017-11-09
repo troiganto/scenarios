@@ -189,7 +189,7 @@ impl<'a> CommandLineHandler<'a> {
         if self.inner_loop(scenarios).is_ok() {
             Ok(())
         } else {
-            if self.is_parallel {
+            if self.is_parallel && !self.children.is_empty() {
                 self.logger
                     .log("waiting for unfinished child processes ...")
             }
@@ -232,32 +232,48 @@ impl<'a> CommandLineHandler<'a> {
     where
         I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
     {
-        // These cumbersome bindings avoid borrowing `self` to the closure.
-        let keep_going = self.keep_going;
-        let logger = &self.logger;
-        let reaper = |child: children::FinishedChild| {
-            if let Err(err) = child.into_result() {
-                logger.log(&err.to_string());
-                if !keep_going {
-                    return Err(err);
-                }
+        // If --keep-going is set, we still need a way to signal that something
+        // went wrong. So we use this variable as a flag.
+        let mut ignored_errors = Ok(());
+        // This extra scope limits the lifetime of the grim `reaper`.
+        {
+            // These cumbersome bindings avoid borrowing `self` to the closure. The
+            // closure itself is straightforward: If usually pass everything
+            // through. But if an error occurs and --keep-going is set, we put the
+            // error aside and pretend nothing happened.
+            let keep_going = self.keep_going;
+            let logger = &self.logger;
+            let mut reaper = |child: children::FinishedChild| match child.into_result() {
+                Ok(()) => Ok(()),
+                Err(err) => {
+                    logger.log(&err.to_string());
+                    if keep_going {
+                        ignored_errors = Err(Error::NotAllFinished);
+                        Ok(())
+                    } else {
+                        Err(err)
+                    }
+                },
+            };
+            // The main loop!
+            for scenario in scenarios {
+                let scenario = scenario?;
+                let token =
+                    pool::spin_wait_for_token(&mut self.tokens, &mut self.children, &mut reaper)?;
+                let child = self.command_line
+                    .with_scenario(scenario)?
+                    .spawn_or_return_token(token, &mut self.tokens)?;
+                self.children.push(child);
             }
-            Ok(())
-        };
-        for scenario in scenarios {
-            let scenario = scenario?;
-            let token = pool::spin_wait_for_token(&mut self.tokens, &mut self.children, &reaper)?;
-            let child = self.command_line
-                .with_scenario(scenario)?
-                .spawn_or_return_token(token, &mut self.tokens)?;
-            self.children.push(child);
+            // No fatal error so far, let's clean up the child process pool!
+            while let Some((child, token)) = self.children.wait_reap_one() {
+                self.tokens.return_token(token);
+                reaper(child?)?;
+            }
         }
-        // No error so far, let's clean up the child process pool!
-        while let Some((child, token)) = self.children.wait_reap_one() {
-            self.tokens.return_token(token);
-            reaper(child?)?;
-        }
-        Ok(())
+        // If we got here, our result would usually be `Ok(())` -- unless there
+        // are errors we ignored due to --keep-going!
+        ignored_errors
     }
 }
 
