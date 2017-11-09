@@ -12,6 +12,9 @@
 //! All we are interested in is printing to `stderr` unless a `quiet`
 //! flag is set. Should be simple enough to roll out on our own!
 
+use std::fmt::Display;
+
+
 pub struct Logger<'a> {
     /// The name of the application. Usually set to `crate_name!()`.
     name: &'a str,
@@ -33,7 +36,7 @@ impl<'a> Logger<'a> {
     }
 
     /// Prints the given message to `stderr`.
-    pub fn log(&self, message: &str) {
+    pub fn log<D: Display>(&self, message: D) {
         if !self.quiet {
             eprintln!("{}: {}", self.name, message);
         }

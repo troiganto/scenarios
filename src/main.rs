@@ -38,9 +38,7 @@ fn main() {
         // Delegate to `try_main`. Catch any error, print it to stderr, and
         // exit with code 1.
         else if let Err(err) = try_main(&args) {
-            let msg = err.to_string();
-            let logger = logger::Logger::new(args.is_present("quiet"));
-            logger.log(&msg);
+            logger::Logger::new(args.is_present("quiet")).log(err);
             1
         } else {
             // `try_main()` returned Ok(()).
@@ -197,7 +195,7 @@ impl<'a> CommandLineHandler<'a> {
                 self.tokens.return_token(token);
                 // Coalesce `WaitError` and `ChildFailed` errors.
                 if let Err(err) = child.and_then(children::FinishedChild::into_result) {
-                    self.logger.log(&err.to_string());
+                    self.logger.log(err);
                 }
             }
             // Note that we log all errors, but only return a generic "not
@@ -246,7 +244,7 @@ impl<'a> CommandLineHandler<'a> {
             let mut reaper = |child: children::FinishedChild| match child.into_result() {
                 Ok(()) => Ok(()),
                 Err(err) => {
-                    logger.log(&err.to_string());
+                    logger.log(&err);
                     if keep_going {
                         ignored_errors = Err(Error::NotAllFinished);
                         Ok(())
