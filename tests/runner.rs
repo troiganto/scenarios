@@ -51,20 +51,33 @@ impl Runner {
         self
     }
 
-
-    /// Adds a scenario file to pass as an argument.
-    ///
-    /// This is like `arg()`, except it automatically prepends the
-    /// directory of scenario files to `filename`.
+    /// Returns the path of the given example scenario file.
     ///
     /// # Panics
-    /// This panics if `filename` is not a relative path.
-    pub fn scenario_file<S: AsRef<Path>>(&mut self, filename: S) -> &mut Self {
+    /// This panics if the file cannot be found, or if `filename` is
+    /// not a relative path.
+    pub fn get_scenario_file_path<S: AsRef<Path>>(&self, filename: S) -> PathBuf {
         if !filename.as_ref().is_relative() {
             panic!("not a relative path: {}", filename.as_ref().display());
         }
         let mut path = self.tests_dir.clone();
         path.push(filename);
+        if !path.is_file() {
+            panic!("not a file: {}", path.display());
+        }
+        path
+    }
+
+    /// Adds a scenario file to pass as an argument.
+    ///
+    /// This is like `arg()`, except it automatically prepends the
+    /// directory of example scenario files to `filename`.
+    ///
+    /// # Panics
+    /// This panics if `filename` is not a relative path, or if the
+    /// file cannot be found.
+    pub fn scenario_file<S: AsRef<Path>>(&mut self, filename: S) -> &mut Self {
+        let path = self.get_scenario_file_path(filename);
         self.arg(path)
     }
 
@@ -79,7 +92,6 @@ impl Runner {
         }
         self
     }
-
 
     /// Runs the command and returns its output.
     pub fn output(&mut self) -> RunResult {
