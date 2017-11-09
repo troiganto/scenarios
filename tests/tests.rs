@@ -83,8 +83,8 @@ mod printing {
     #[test]
     fn test_strict_mode() {
         let expected_stdout = "A1, C1\nA1, C2\n";
-        let expected_stderr = "error: variable \"a_var1\" defined both in scenario \"A1\" and in \
-                               scenario \"C3\"\n";
+        let expected_stderr = "scenarios: error: variable \"a_var1\" defined both in scenario \
+                               \"A1\" and in scenario \"C3\"\n";
         let output = Runner::new()
             .arg("--strict")
             .scenario_files(&["good_a.ini", "conflicts_with_a.ini"])
@@ -193,7 +193,7 @@ mod errors {
     use runner::Runner;
 
 
-    ///
+    /// Returns a runner that will fail in a specific scenario.
     fn stop_at_scenario(name: &str, additional_args: &[&str]) -> Runner {
         let script = format!("if [ {{}} = {} ]; then exit 1; else echo {{}}; fi", name);
         let mut runner = Runner::new();
@@ -216,7 +216,7 @@ mod errors {
 
     #[test]
     fn test_missing_file() {
-        let output = Runner::new().scenario_file("does not exist").output();
+        let output = Runner::new().arg("does not exist").output();
         assert_eq!("", &output.stdout);
         assert!(!output.status.success());
     }
