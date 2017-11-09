@@ -19,9 +19,16 @@ pub struct Logger<'a> {
     quiet: bool,
 }
 
+impl Logger<'static> {
+    /// Creates a logger with the default name `crate_name!()`.
+    pub fn new(quiet: bool) -> Self {
+        Logger::with_name(crate_name!(), quiet)
+    }
+}
+
 impl<'a> Logger<'a> {
-    /// Creates a new logger.
-    pub fn new(name: &'a str, quiet: bool) -> Self {
+    /// Creates a logger with a custom name.
+    pub fn with_name(name: &'a str, quiet: bool) -> Self {
         Logger { name, quiet }
     }
 

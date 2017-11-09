@@ -21,27 +21,34 @@ use consumers::pool;
 
 /// The entry point and wrapper around `try_main`.
 fn main() {
-    // Get clapp::App instance.
-    let app = app::get_app();
-    // We clone `app` here because `get_matches` consumes it -- but we
-    // might still need it when handling -h and --help.
-    let args = app.clone().get_matches();
-    // Handle -h (short help) and --help (long help).
-    if args.is_present("short_help") {
-        app::print_short_help(app);
-        return;
-    } else if args.is_present("long_help") {
-        app::print_long_help(app);
-        return;
-    }
-    // Delegate to `try_main`. Catch any error, print it to stderr, and
-    // exit with code 1.
-    if let Err(err) = try_main(&args) {
-        let msg = err.to_string();
-        let kind = clap::ErrorKind::Format;
-        let err = clap::Error::with_description(&msg, kind);
-        err.exit();
-    }
+    let exit_code: i32 = {
+        // Get clapp::App instance.
+        let app = app::get_app();
+        // We clone `app` here because `get_matches` consumes it -- but we
+        // might still need it when handling -h and --help.
+        let args = app.clone().get_matches();
+        // Handle -h (short help) and --help (long help).
+        if args.is_present("short_help") {
+            app::print_short_help(app);
+            0
+        } else if args.is_present("long_help") {
+            app::print_long_help(app);
+            0
+        }
+        // Delegate to `try_main`. Catch any error, print it to stderr, and
+        // exit with code 1.
+        else if let Err(err) = try_main(&args) {
+            let msg = err.to_string();
+            let logger = logger::Logger::new(args.is_present("quiet"));
+            logger.log(&msg);
+            1
+        } else {
+            // `try_main()` returned Ok(()).
+            0
+        }
+    };
+    // All destructors have run at this point.
+    ::std::process::exit(exit_code);
 }
 
 
@@ -132,7 +139,7 @@ impl<'a> CommandLineHandler<'a> {
             command_line: Self::command_line_from_args(args),
             tokens: consumers::TokenStock::new(max_num_tokens),
             children: consumers::ProcessPool::new(),
-            logger: logger::Logger::new(crate_name!(), args.is_present("quiet")),
+            logger: logger::Logger::new(args.is_present("quiet")),
         }
     }
 
@@ -257,30 +264,30 @@ quick_error! {
     enum Error {
         ParseError(err: scenarios::ParseError) {
             description(err.description())
-            display("{}", err)
+            display("error: {}", err)
             cause(err)
             from()
         }
         ScenarioError(err: scenarios::ScenarioError) {
             description(err.description())
-            display("{}", err)
+            display("error: {}", err)
             cause(err)
             from()
         }
         VariableNameError(err: commandline::VariableNameError) {
             description(err.description())
-            display("{}", err)
+            display("error: {}", err)
             cause(err)
             from()
         }
         ChildError(err: children::Error) {
             description(err.description())
-            display("{}", err)
+            display("error: {}", err)
             cause(err)
             from()
         }
         NoScenarios {
-            description("no scenarios provided")
+            description("error: no scenarios provided")
         }
     }
 }
