@@ -14,7 +14,6 @@ mod consumers;
 
 
 use scenarios::{Scenario, ScenarioFile};
-use consumers::commandline::{self, CommandLine};
 use consumers::children;
 use consumers::pool;
 
@@ -142,8 +141,8 @@ impl<'a> CommandLineHandler<'a> {
     }
 
     /// Creates a `CommandLine` from `args`.
-    fn command_line_from_args(args: &'a clap::ArgMatches) -> CommandLine<&'a str> {
-        let options = commandline::Options {
+    fn command_line_from_args(args: &'a clap::ArgMatches) -> consumers::CommandLine<&'a str> {
+        let options = consumers::CommandLineOptions {
             is_strict: !args.is_present("lax"),
             ignore_env: args.is_present("ignore_env"),
             add_scenarios_name: !args.is_present("no_export_name"),
@@ -291,7 +290,7 @@ quick_error! {
             cause(err)
             from()
         }
-        VariableNameError(err: commandline::VariableNameError) {
+        VariableNameError(err: consumers::VariableNameError) {
             description(err.description())
             display("error: {}", err)
             cause(err)
