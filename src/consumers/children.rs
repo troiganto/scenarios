@@ -265,8 +265,8 @@ quick_error! {
             from()
         }
         ChildFailed(status: ExitStatus) {
-            description("command return non-zero exit status")
-            display("command return non-zero {}", status)
+            description("command returned non-zero exit status")
+            display("command returned non-zero {}", status)
             from()
         }
     }

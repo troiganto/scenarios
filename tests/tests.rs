@@ -195,7 +195,7 @@ mod errors {
 
     ///
     fn stop_at_scenario(name: &str, additional_args: &[&str]) -> Runner {
-        let script = format!("if [ {{}} = {} ]; then exit 1; else exit 0; fi", name);
+        let script = format!("if [ {{}} = {} ]; then exit 1; else echo {{}}; fi", name);
         let mut runner = Runner::new();
         runner
             .scenario_file("many_scenarios.ini")
@@ -206,7 +206,7 @@ mod errors {
 
     #[test]
     fn test_no_args() {
-        let expected = "error: no scenarios provided\n";
+        let expected = "scenarios: error: no scenarios provided\n";
         let output = Runner::new().output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);
@@ -216,9 +216,23 @@ mod errors {
 
     #[test]
     fn test_missing_file() {
-        let output = Runner::new()
-            .scenario_file("does not exist")
-            .output();
+        let output = Runner::new().scenario_file("does not exist").output();
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_broken_file() {
+        let mut runner = Runner::new();
+        runner.scenario_file("broken.ini");
+        let expected = format!(
+            "scenarios: error: {}:17: scenario already exists: \"Scenario 1\" \
+             (first occurrence on line 1)\n",
+            runner.get_scenario_file_path("broken.ini").display()
+        );
+        let output = runner.output();
+        assert_eq!(&expected, &output.stderr);
         assert_eq!("", &output.stdout);
         assert!(!output.status.success());
     }
@@ -226,24 +240,27 @@ mod errors {
 
     #[test]
     fn test_stop_at_first_error() {
-        let expected_stderr = "scenarios: command returned non-zero exit code: 1\n\tin scenario \"3\"\n";
-        let expected_stdout = "error: no scenarios provided\n";
-        let output = stop_at_scenario("3", &[])
-            .output();
-        assert_eq!(expected_stdout, &output.stderr);
-        assert_eq!(expected_stderr, &output.stdout);
+        let expected_stderr =
+            "scenarios: command returned non-zero exit code: 1\n\tin scenario \"3\"\nscenarios: \
+             not all scenarios terminated successfully\n";
+        let expected_stdout = "1\n2\n";
+        let output = stop_at_scenario("3", &[]).output();
+        assert_eq!(expected_stderr, &output.stderr);
+        assert_eq!(expected_stdout, &output.stdout);
         assert!(!output.status.success());
     }
 
 
     #[test]
     fn test_stop_at_first_error_parallel() {
-        let expected_stderr = "";
-        let expected_stdout = "";
-        let output = stop_at_scenario("1", &["--jobs=3"])
-            .output();
-        assert_eq!(expected_stdout, &output.stderr);
-        assert_eq!(expected_stderr, &output.stdout);
+        let expected_stderr =
+            "scenarios: command returned non-zero exit code: 1\n\tin scenario \"1\"\nscenarios: \
+             waiting for unfinished child processes ...\nscenarios: not all scenarios terminated \
+             successfully\n";
+        let expected_stdout = "2\n3\n";
+        let output = stop_at_scenario("1", &["--jobs=3"]).output();
+        assert_eq!(expected_stderr, &output.stderr);
+        assert_eq!(expected_stdout, &output.stdout);
         assert!(!output.status.success());
     }
 
@@ -253,10 +270,10 @@ mod errors {
         let expected_stderr = "";
         let expected_stdout = "";
         let output = Runner::new()
-            .args(&["--jobs=3", "--", "sh" , "-c", "exit 1"])
+            .args(&["--jobs=3", "--", "sh", "-c", "exit 1"])
             .output();
-        assert_eq!(expected_stdout, &output.stderr);
-        assert_eq!(expected_stderr, &output.stdout);
+        assert_eq!(expected_stderr, &output.stderr);
+        assert_eq!(expected_stdout, &output.stdout);
         assert!(!output.status.success());
     }
 
@@ -265,10 +282,9 @@ mod errors {
     fn test_keep_going() {
         let expected_stderr = "";
         let expected_stdout = "";
-        let output = stop_at_scenario("1", &["--keep-going"])
-            .output();
-        assert_eq!(expected_stdout, &output.stderr);
-        assert_eq!(expected_stderr, &output.stdout);
+        let output = stop_at_scenario("1", &["--keep-going"]).output();
+        assert_eq!(expected_stderr, &output.stderr);
+        assert_eq!(expected_stdout, &output.stdout);
         assert!(!output.status.success());
     }
 
@@ -277,10 +293,9 @@ mod errors {
     fn test_keep_going_parallel() {
         let expected_stderr = "";
         let expected_stdout = "";
-        let output = stop_at_scenario("1", &["--keep-going", "--jobs=3"])
-            .output();
-        assert_eq!(expected_stdout, &output.stderr);
-        assert_eq!(expected_stderr, &output.stdout);
+        let output = stop_at_scenario("1", &["--keep-going", "--jobs=3"]).output();
+        assert_eq!(expected_stderr, &output.stderr);
+        assert_eq!(expected_stdout, &output.stdout);
         assert!(!output.status.success());
     }
 }

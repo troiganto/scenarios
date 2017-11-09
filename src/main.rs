@@ -184,14 +184,14 @@ impl<'a> CommandLineHandler<'a> {
     where
         I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
     {
-        let run_result = self.inner_loop(scenarios);
-        // If run_result is Ok, it means the pool is empty. If it is `Err`, we
-        // must clean out the pool ourselves. Note that we log all errors, but
-        // do not return them.
-        if run_result.is_err() {
+        // If `inner_loop()` returns `Ok`, it means the pool is empty. If it
+        // returns `Err`, we must clean up the pool ourselves.
+        if self.inner_loop(scenarios).is_ok() {
+            Ok(())
+        } else {
             if self.is_parallel {
                 self.logger
-                    .log("Waiting for unfinished child processes ...")
+                    .log("waiting for unfinished child processes ...")
             }
             while let Some((child, token)) = self.children.wait_reap_one() {
                 self.tokens.return_token(token);
@@ -200,8 +200,11 @@ impl<'a> CommandLineHandler<'a> {
                     self.logger.log(&err.to_string());
                 }
             }
+            // Note that we log all errors, but only return a generic "not
+            // everything was successful". This avoids the same message being
+            // printed twice.
+            Err(Error::NotAllFinished)
         }
-        run_result
     }
 
     /// The main loop of the program.
@@ -285,6 +288,9 @@ quick_error! {
             display("error: {}", err)
             cause(err)
             from()
+        }
+        NotAllFinished {
+            description("not all scenarios terminated successfully")
         }
         NoScenarios {
             description("error: no scenarios provided")
