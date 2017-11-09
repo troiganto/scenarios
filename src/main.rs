@@ -159,14 +159,13 @@ impl<'a> CommandLineHandler<'a> {
 
     /// Parses and interprets the `--jobs` option.
     fn max_num_tokens_from_args(args: &clap::ArgMatches) -> usize {
-        if let Some(num) = args.value_of("jobs") {
-            // We can unwrap here because clap validates --jobs for us.
-            num.parse::<usize>().unwrap()
-        } else if args.is_present("jobs") {
-            num_cpus::get()
-        } else {
-            1
+        if !args.is_present("jobs") {
+            return 1;
         }
+        // We can unwrap the `parse()` result because clap validates --jobs.
+        args.value_of("jobs")
+            .map(|s| s.parse().unwrap())
+            .unwrap_or_else(num_cpus::get)
     }
 
     /// Runs the main loop of the program and tears it down afterwards.
