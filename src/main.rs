@@ -13,9 +13,6 @@ mod cartesian;
 mod consumers;
 
 
-use std::io;
-use std::num::ParseIntError;
-
 use scenarios::{Scenario, ScenarioFile};
 use consumers::commandline::{self, CommandLine};
 use consumers::children;
@@ -258,12 +255,6 @@ impl<'a> CommandLineHandler<'a> {
 quick_error! {
     #[derive(Debug)]
     enum Error {
-        IoError(err: io::Error) {
-            description(err.description())
-            display("{}", err)
-            cause(err)
-            from()
-        }
         ParseError(err: scenarios::ParseError) {
             description(err.description())
             display("{}", err)
@@ -288,17 +279,8 @@ quick_error! {
             cause(err)
             from()
         }
-        ParseIntError(err: ParseIntError) {
-            description(err.description())
-            display("{}", err)
-            cause(err)
-            from()
-        }
         NoScenarios {
             description("no scenarios provided")
-        }
-        NoCommandLine {
-            description("no command line provided")
         }
     }
 }

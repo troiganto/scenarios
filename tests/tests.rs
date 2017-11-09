@@ -199,7 +199,7 @@ mod errors {
         let mut runner = Runner::new();
         runner
             .scenario_file("many_scenarios.ini")
-            .args(additional_args);
+            .args(additional_args)
             .args(&["--", "sh", "-c", &script]);
         runner
     }
