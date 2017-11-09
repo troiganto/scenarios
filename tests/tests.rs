@@ -267,10 +267,15 @@ mod errors {
 
     #[test]
     fn test_finish_what_is_started() {
-        let expected_stderr = "";
+        let expected_stderr = "scenarios: command returned non-zero exit code: 1\n\tin scenario \
+                               \"1\"\nscenarios: waiting for unfinished child processes \
+                               ...\nscenarios: command returned non-zero exit code: 1\n\tin \
+                               scenario \"2\"\nscenarios: not all scenarios terminated \
+                               successfully\n";
         let expected_stdout = "";
         let output = Runner::new()
-            .args(&["--jobs=3", "--", "sh", "-c", "exit 1"])
+            .scenario_file("many_scenarios.ini")
+            .args(&["--jobs=2", "--", "sh", "-c", "exit 1"])
             .output();
         assert_eq!(expected_stderr, &output.stderr);
         assert_eq!(expected_stdout, &output.stdout);
@@ -280,8 +285,10 @@ mod errors {
 
     #[test]
     fn test_keep_going() {
-        let expected_stderr = "";
-        let expected_stdout = "";
+        let expected_stderr =
+            "scenarios: command returned non-zero exit code: 1\n\tin scenario \"1\"\nscenarios: \
+             not all scenarios terminated successfully\n";
+        let expected_stdout = "2\n3\n4\n5\n";
         let output = stop_at_scenario("1", &["--keep-going"]).output();
         assert_eq!(expected_stderr, &output.stderr);
         assert_eq!(expected_stdout, &output.stdout);
@@ -291,8 +298,10 @@ mod errors {
 
     #[test]
     fn test_keep_going_parallel() {
-        let expected_stderr = "";
-        let expected_stdout = "";
+        let expected_stderr =
+            "scenarios: command returned non-zero exit code: 1\n\tin scenario \"1\"\nscenarios: \
+             not all scenarios terminated successfully\n";
+        let expected_stdout = "2\n3\n4\n5\n";
         let output = stop_at_scenario("1", &["--keep-going", "--jobs=3"]).output();
         assert_eq!(expected_stderr, &output.stderr);
         assert_eq!(expected_stdout, &output.stdout);
