@@ -2,64 +2,21 @@
 use std::time;
 use std::thread;
 
-use super::tokens::{PoolToken, TokenStock};
+use super::tokens::PoolToken;
 use super::children::{self, RunningChild, FinishedChild};
-
-
-/// Waits until there is a free tocken in the stock.
-///
-/// This function keeps trying to get a token from the given
-/// `TokenStock`. If it cannot get one, it waits a little and reaps any
-/// finished children from the given `ProcessPool` to free up tokens,
-/// then tries again.
-///
-/// Whenever a finished child is reaped, the call-back function
-/// `reaper` is called with it as an argument. This allows the caller
-/// to check the freed children for errors before sending them off to
-/// the nirvana. If `reaper` returns `Ok(())`, this function continues
-/// normally. Otherwise, the function aborts and passes the error on.
-/// (The associated token is not lost.)
-///
-/// # Errors
-/// This function returns an error in two cases:
-/// 1. If waiting on any child in the `ProcessPool` fails, this returns
-///    `Err(children::Error::IoError)`;
-/// 2. If `reaper` returns an error, this error is passed through.
-pub fn spin_wait_for_token<F>(
-    stock: &mut TokenStock,
-    children: &mut ProcessPool,
-    mut reaper: F,
-) -> children::Result<PoolToken>
-where
-    F: FnMut(FinishedChild) -> children::Result<()>,
-{
-    loop {
-        // If there are free tokens, just take one.
-        if let Some(token) = stock.get_token() {
-            return Ok(token);
-        }
-        // If not, wait a little (to go easy on the CPU) ...
-        thread::sleep(time::Duration::from_millis(10));
-        // ... and clear out any finished children.
-        for (child, token) in children.reap() {
-            stock.return_token(token);
-            reaper(child?)?;
-        }
-    }
-}
 
 
 /// A pool of processes which can run concurrently.
 ///
-/// Adding a new child process into this pool requires a `PoolToken`
-/// handed out by `TokenStock`. This allows us to limit the number of
-/// child process that can run at a time.
+/// This is basically a vector over `RunningChild`ren that allows you
+/// to easily check any children that have finished running and to
+/// remove them from the pool.
 ///
 /// # Panics
 /// As a safety measure, `ProcessPool` panics if it is dropped while
 /// still containing child processes. You must ensure that the pool is
-/// empty before leaving its scope, for example via
-/// `wait_and_reap_all()`.
+/// empty before dropping it -- for example by calling `wait_reap()`
+/// until it returns `None`.
 #[derive(Debug, Default)]
 pub struct ProcessPool {
     /// The list of currently running child processes.
@@ -105,7 +62,7 @@ impl ProcessPool {
     /// # Errors
     /// If waiting on any child fails, this function returns
     /// `Some((Err(_), token))`.
-    pub fn wait_reap_one(&mut self) -> Option<(children::Result<FinishedChild>, PoolToken)> {
+    pub fn wait_reap(&mut self) -> Option<(children::Result<FinishedChild>, PoolToken)> {
         if self.is_empty() {
             return None;
         }
@@ -117,21 +74,6 @@ impl ProcessPool {
             }
             thread::sleep(time::Duration::from_millis(10));
         }
-    }
-
-    /// Waits for all processes left in the queue to finish.
-    ///
-    /// This waits for all remaining children in this pool to finish
-    /// running and only *then* returns an iterator over the resulting
-    /// `FinishedChild`ren. Due to that, it is okay not to exhaust the
-    /// returned iterator; the children will all have exited in any
-    /// case.
-    ///
-    /// # Errors
-    /// If waiting on any child fails, its respective entry in the
-    /// vector will contain an `Err` instead of an `Ok`.
-    pub fn wait_and_reap_all(&mut self) -> FinishedIntoIter {
-        FinishedIntoIter::new(self)
     }
 }
 
@@ -186,32 +128,5 @@ impl<'a> Iterator for FinishedIter<'a> {
             }
         }
         None
-    }
-}
-
-
-/// An iterator that finishes all child processes in a `ProcessPool`.
-///
-/// This iterator is returned by `ProcessPool::finish_all()`.
-pub struct FinishedIntoIter<'a>(::std::vec::Drain<'a, RunningChild>);
-
-impl<'a> FinishedIntoIter<'a> {
-    /// Creates a new iterator that drains `pool`'s queue.
-    fn new(pool: &'a mut ProcessPool) -> Self {
-        // Wait for all children now so it's no problem if the caller doesn't
-        // exhaust this iterator.
-        for child in pool.queue.iter_mut() {
-            // Ignore any errors for now, we return them via `next()`.
-            let _ = child.wait();
-        }
-        FinishedIntoIter(pool.queue.drain(..))
-    }
-}
-
-impl<'a> Iterator for FinishedIntoIter<'a> {
-    type Item = (children::Result<FinishedChild>, PoolToken);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(RunningChild::finish)
     }
 }
