@@ -1,4 +1,6 @@
 
+use std::io::{self, Write};
+
 use scenarios::Scenario;
 
 /// The string pattern that gets replaced in `Printer::template`.
@@ -72,7 +74,8 @@ impl<'template, 'terminator> Printer<'template, 'terminator> {
 
     /// Formats the scenario's name and prints it to `stdout`.
     pub fn print_scenario(&self, scenario: &Scenario) {
-        print!("{}", self.format(scenario.name()));
+        let s = self.format(scenario.name());
+        io::stdout().write_all(s.as_bytes()).unwrap();
     }
 }
 

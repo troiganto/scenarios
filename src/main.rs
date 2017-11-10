@@ -14,9 +14,7 @@ mod consumers;
 
 
 use scenarios::{Scenario, ScenarioFile};
-use consumers::commandline::{self, CommandLine};
-use consumers::children;
-use consumers::pool;
+use consumers::{PreparedChild, FinishedChild};
 
 
 /// The entry point and wrapper around `try_main`.
@@ -38,9 +36,7 @@ fn main() {
         // Delegate to `try_main`. Catch any error, print it to stderr, and
         // exit with code 1.
         else if let Err(err) = try_main(&args) {
-            let msg = err.to_string();
-            let logger = logger::Logger::new(args.is_present("quiet"));
-            logger.log(&msg);
+            logger::Logger::new(args.is_present("quiet")).log(err);
             1
         } else {
             // `try_main()` returned Ok(()).
@@ -78,8 +74,8 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     let combined_scenarios =
         cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_options));
     if args.is_present("command_line") {
-        CommandLineHandler::new(&args)
-            .handle(combined_scenarios)?;
+        let handler = CommandLineHandler::new(&args);
+        consumers::loop_in_process_pool(combined_scenarios, handler)?;
     } else {
         handle_printing(&args, combined_scenarios)?;
     }
@@ -114,16 +110,14 @@ where
 struct CommandLineHandler<'a> {
     /// Flag read from --keep-going.
     keep_going: bool,
-    /// Flag read from --jobs.
-    is_parallel: bool,
+    /// Argument read from --jobs.
+    max_num_of_children: usize,
     /// The command line that is executed for each scenario.
     command_line: consumers::CommandLine<&'a str>,
-    /// Our stock of tokens for parallelism.
-    tokens: consumers::TokenStock,
-    /// A pool of currently-running processes.
-    children: consumers::ProcessPool,
     /// A logger that helps us print information to the user.
     logger: logger::Logger<'static>,
+    ///
+    any_errors: bool,
 }
 
 impl<'a> CommandLineHandler<'a> {
@@ -132,20 +126,18 @@ impl<'a> CommandLineHandler<'a> {
     /// This reads the parsed command-line arguments and initializes
     /// the fields of this struct from them.
     pub fn new(args: &'a clap::ArgMatches) -> Self {
-        let max_num_tokens = Self::max_num_tokens_from_args(args);
         CommandLineHandler {
             keep_going: args.is_present("keep_going"),
-            is_parallel: max_num_tokens > 1,
+            max_num_of_children: Self::max_num_tokens_from_args(args),
             command_line: Self::command_line_from_args(args),
-            tokens: consumers::TokenStock::new(max_num_tokens),
-            children: consumers::ProcessPool::new(),
             logger: logger::Logger::new(args.is_present("quiet")),
+            any_errors: false,
         }
     }
 
     /// Creates a `CommandLine` from `args`.
-    fn command_line_from_args(args: &'a clap::ArgMatches) -> CommandLine<&'a str> {
-        let options = commandline::Options {
+    fn command_line_from_args(args: &'a clap::ArgMatches) -> consumers::CommandLine<&'a str> {
+        let options = consumers::CommandLineOptions {
             is_strict: !args.is_present("lax"),
             ignore_env: args.is_present("ignore_env"),
             add_scenarios_name: !args.is_present("no_export_name"),
@@ -162,118 +154,67 @@ impl<'a> CommandLineHandler<'a> {
 
     /// Parses and interprets the `--jobs` option.
     fn max_num_tokens_from_args(args: &clap::ArgMatches) -> usize {
-        if let Some(num) = args.value_of("jobs") {
-            // We can unwrap here because clap validates --jobs for us.
-            num.parse::<usize>().unwrap()
-        } else if args.is_present("jobs") {
-            num_cpus::get()
-        } else {
-            1
+        if !args.is_present("jobs") {
+            return 1;
         }
+        // We can unwrap the `parse()` result because clap validates --jobs.
+        args.value_of("jobs")
+            .map(|s| s.parse().unwrap())
+            .unwrap_or_else(num_cpus::get)
+    }
+}
+
+impl<'a, 's> consumers::LoopDriver<scenarios::Result<Scenario<'s>>> for CommandLineHandler<'a> {
+    type Error = Error;
+
+    fn max_num_of_children(&self) -> usize {
+        self.max_num_of_children
     }
 
-    /// Runs the main loop of the program and tears it down afterwards.
-    ///
-    /// This immediately calls `inner_loop()` and afterwards waits for
-    /// all running child processes.
-    ///
-    /// # Errors
-    /// Same as `inner_loop()`. While all errors are reported via
-    /// `self.logger`, only the first error is returned.
-    pub fn handle<'s, I>(&mut self, scenarios: I) -> Result<(), Error>
-    where
-        I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
-    {
-        // If `inner_loop()` returns `Ok`, it means the pool is empty. If it
-        // returns `Err`, we must clean up the pool ourselves.
-        if self.inner_loop(scenarios).is_ok() {
+    fn prepare_child(&self, s: scenarios::Result<Scenario<'s>>) -> Result<PreparedChild, Error> {
+        let child = self.command_line.with_scenario(s?)?;
+        Ok(child)
+    }
+
+    fn on_reap(&mut self, child: FinishedChild) -> Result<(), Self::Error> {
+        let result = child.into_result();
+        if self.keep_going {
+            if let Err(err) = result {
+                // Don't convert error to `Self::Error` -- that would add the
+                // word "error:" to the log string. But we don't want that
+                // because we keep running.
+                self.any_errors = true;
+                self.logger.log(err)
+            }
             Ok(())
         } else {
-            if self.is_parallel && !self.children.is_empty() {
-                self.logger
-                    .log("waiting for unfinished child processes ...")
-            }
-            while let Some((child, token)) = self.children.wait_reap_one() {
-                self.tokens.return_token(token);
-                // Coalesce `WaitError` and `ChildFailed` errors.
-                if let Err(err) = child.and_then(children::FinishedChild::into_result) {
-                    self.logger.log(&err.to_string());
-                }
-            }
-            // Note that we log all errors, but only return a generic "not
-            // everything was successful". This avoids the same message being
-            // printed twice.
-            Err(Error::NotAllFinished)
+            result.map_err(Error::from)
         }
     }
 
-    /// The main loop of the program.
-    ///
-    /// This starts one child process for each scenario and pushes it
-    /// into the pool `children`. If the maximum allowed number of
-    /// child processes is running, this loop waits until one of them
-    /// has finished.
-    ///
-    /// On the happy path, this function waits until all child
-    /// processes have terminated successfully and the pool
-    /// `self.children` is empty again. However, if an error occurs
-    /// that `inner_loop` cannot ignore, it returns immediately. In
-    /// that case, `self.children` may still contain child processes
-    /// and it is the task of the caller to clean them up.
-    ///
-    /// # Errors
-    /// This function may fail if:
-    /// - spawning a child process gives an `io::Error`;
-    /// - waiting on a child process gives an `io::Error`;
-    /// - two variable names conflict and strict mode is enabled;
-    /// - a child process exits with non-zero exit status and
-    ///   `keep_going` is `false`.
-    fn inner_loop<'s, I>(&mut self, scenarios: I) -> Result<(), Error>
-    where
-        I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
-    {
-        // If --keep-going is set, we still need a way to signal that something
-        // went wrong. So we use this variable as a flag.
-        let mut ignored_errors = Ok(());
-        // This extra scope limits the lifetime of the grim `reaper`.
-        {
-            // These cumbersome bindings avoid borrowing `self` to the closure. The
-            // closure itself is straightforward: If usually pass everything
-            // through. But if an error occurs and --keep-going is set, we put the
-            // error aside and pretend nothing happened.
-            let keep_going = self.keep_going;
-            let logger = &self.logger;
-            let mut reaper = |child: children::FinishedChild| match child.into_result() {
-                Ok(()) => Ok(()),
-                Err(err) => {
-                    logger.log(&err.to_string());
-                    if keep_going {
-                        ignored_errors = Err(Error::NotAllFinished);
-                        Ok(())
-                    } else {
-                        Err(err)
-                    }
-                },
-            };
-            // The main loop!
-            for scenario in scenarios {
-                let scenario = scenario?;
-                let token =
-                    pool::spin_wait_for_token(&mut self.tokens, &mut self.children, &mut reaper)?;
-                let child = self.command_line
-                    .with_scenario(scenario)?
-                    .spawn_or_return_token(token, &mut self.tokens)?;
-                self.children.push(child);
-            }
-            // No fatal error so far, let's clean up the child process pool!
-            while let Some((child, token)) = self.children.wait_reap_one() {
-                self.tokens.return_token(token);
-                reaper(child?)?;
-            }
+    fn on_loop_failed(&mut self, error: Self::Error) {
+        self.any_errors = true;
+        self.logger.log(error);
+        if self.max_num_of_children > 1 {
+            self.logger.log("waiting for unfinished jobs ...");
         }
-        // If we got here, our result would usually be `Ok(())` -- unless there
-        // are errors we ignored due to --keep-going!
-        ignored_errors
+    }
+
+    fn on_cleanup_reap(&mut self, child: Result<FinishedChild, consumers::ChildError>) {
+        if let Err(err) = child.and_then(FinishedChild::into_result) {
+            // Don't convert error to `Self::Error` -- that would add the word
+            // "error:" to the log string. But we don't want that because we
+            // keep running.
+            self.logger.log(err);
+        }
+    }
+
+    fn on_finish(self) -> Result<(), Self::Error> {
+        if !self.any_errors {
+            Ok(())
+        } else {
+            Err(Error::NotAllFinished)
+        }
     }
 }
 
@@ -293,13 +234,13 @@ quick_error! {
             cause(err)
             from()
         }
-        VariableNameError(err: commandline::VariableNameError) {
+        VariableNameError(err: consumers::VariableNameError) {
             description(err.description())
             display("error: {}", err)
             cause(err)
             from()
         }
-        ChildError(err: children::Error) {
+        ChildError(err: consumers::ChildError) {
             description(err.description())
             display("error: {}", err)
             cause(err)

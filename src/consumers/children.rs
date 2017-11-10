@@ -6,7 +6,7 @@ use std::process::{Command, Child, ExitStatus};
 
 use quick_error::{Context, ResultExt};
 
-use super::pool::{PoolToken, TokenStock};
+use super::tokens::{PoolToken, TokenStock};
 
 
 /// Convenience alias for `std::result::Result`.

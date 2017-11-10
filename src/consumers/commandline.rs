@@ -5,7 +5,8 @@ use std::process::Command;
 use std::fmt::{self, Display};
 
 use scenarios::Scenario;
-use super::printer::Printer;
+
+use super::Printer;
 use super::children::PreparedChild;
 
 
