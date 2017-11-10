@@ -239,6 +239,34 @@ mod errors {
 
 
     #[test]
+    fn test_broken_command() {
+        let expected_stderr = "";
+        let expected_stdout = "";
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .args(&["--", "not a command"])
+            .output();
+        assert_eq!(expected_stderr, &output.stderr);
+        assert_eq!(expected_stdout, &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_broken_command_parallel() {
+        let expected_stderr = "";
+        let expected_stdout = "";
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .args(&["--jobs=2", "--", "not a command"])
+            .output();
+        assert_eq!(expected_stderr, &output.stderr);
+        assert_eq!(expected_stdout, &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
     fn test_stop_at_first_error() {
         let expected_stderr =
             "scenarios: command returned non-zero exit code: 1\n\tin scenario \"3\"\nscenarios: \
