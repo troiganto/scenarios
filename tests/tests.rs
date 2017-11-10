@@ -282,9 +282,9 @@ mod errors {
     #[test]
     fn test_stop_at_first_error_parallel() {
         let expected_stderr =
-            "scenarios: command returned non-zero exit code: 1\n\tin scenario \"1\"\nscenarios: \
-             waiting for unfinished child processes ...\nscenarios: not all scenarios terminated \
-             successfully\n";
+            "scenarios: error: command returned non-zero exit code: 1\n\tin scenario \
+             \"1\"\nscenarios: waiting for unfinished jobs ...\nscenarios: not all \
+             scenarios terminated successfully\n";
         let expected_stdout = "2\n3\n";
         let output = stop_at_scenario("1", &["--jobs=3"]).output();
         assert_eq!(expected_stderr, &output.stderr);
@@ -295,11 +295,10 @@ mod errors {
 
     #[test]
     fn test_finish_what_is_started() {
-        let expected_stderr = "scenarios: command returned non-zero exit code: 1\n\tin scenario \
-                               \"1\"\nscenarios: waiting for unfinished child processes \
-                               ...\nscenarios: command returned non-zero exit code: 1\n\tin \
-                               scenario \"2\"\nscenarios: not all scenarios terminated \
-                               successfully\n";
+        let expected_stderr =
+            "scenarios: command returned non-zero exit code: 1\n\tin scenario \"1\"\nscenarios: \
+             waiting for unfinished jobs ...\nscenarios: command returned non-zero exit code: \
+             1\n\tin scenario \"2\"\nscenarios: not all scenarios terminated successfully\n";
         let expected_stdout = "";
         let output = Runner::new()
             .scenario_file("many_scenarios.ini")

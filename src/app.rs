@@ -134,8 +134,8 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .requires("command_line")
              .help("Don't abort if a COMMAND fails.")
              .long_help("Don't abort if a COMMAND fails. The default \
-                         is to cancel everything as soon as one child \
-                         processes has been found out to have failed."))
+                         is to cancel everything as soon as one job \
+                         has been found out to have failed."))
         // Multi-processing.
         .arg(Arg::with_name("jobs")
              .short("j")

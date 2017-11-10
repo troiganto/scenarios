@@ -196,8 +196,7 @@ impl<'a, 's> consumers::LoopDriver<scenarios::Result<Scenario<'s>>> for CommandL
         self.any_errors = true;
         self.logger.log(error);
         if self.max_num_of_children > 1 {
-            self.logger
-                .log("waiting on unfinished child processes ...");
+            self.logger.log("waiting for unfinished jobs ...");
         }
     }
 
