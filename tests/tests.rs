@@ -240,37 +240,39 @@ mod errors {
 
     #[test]
     fn test_broken_command() {
-        let expected_stderr = "";
-        let expected_stdout = "";
+        let expected = "scenarios: error: could not execute command \"not a command\": No such \
+                        file or directory (os error 2)\n\tin scenario \"A1\"\nscenarios: not all \
+                        scenarios terminated successfully\n";
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .args(&["--", "not a command"])
             .output();
-        assert_eq!(expected_stderr, &output.stderr);
-        assert_eq!(expected_stdout, &output.stdout);
+        assert_eq!(expected, &output.stderr);
+        assert_eq!("", &output.stdout);
         assert!(!output.status.success());
     }
 
 
     #[test]
     fn test_broken_command_parallel() {
-        let expected_stderr = "";
-        let expected_stdout = "";
+        let expected = "scenarios: error: could not execute command \"not a command\": No such \
+                        file or directory (os error 2)\n\tin scenario \"A1\"\nscenarios: waiting \
+                        for unfinished jobs ...\nscenarios: not all scenarios terminated \
+                        successfully\n";
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .args(&["--jobs=2", "--", "not a command"])
             .output();
-        assert_eq!(expected_stderr, &output.stderr);
-        assert_eq!(expected_stdout, &output.stdout);
+        assert_eq!(expected, &output.stderr);
         assert!(!output.status.success());
     }
 
 
     #[test]
     fn test_stop_at_first_error() {
-        let expected_stderr =
-            "scenarios: command returned non-zero exit code: 1\n\tin scenario \"3\"\nscenarios: \
-             not all scenarios terminated successfully\n";
+        let expected_stderr = "scenarios: error: command returned non-zero exit code: 1\n\tin \
+                               scenario \"3\"\nscenarios: not all scenarios terminated \
+                               successfully\n";
         let expected_stdout = "1\n2\n";
         let output = stop_at_scenario("3", &[]).output();
         assert_eq!(expected_stderr, &output.stderr);
@@ -295,10 +297,11 @@ mod errors {
 
     #[test]
     fn test_finish_what_is_started() {
-        let expected_stderr =
-            "scenarios: command returned non-zero exit code: 1\n\tin scenario \"1\"\nscenarios: \
-             waiting for unfinished jobs ...\nscenarios: command returned non-zero exit code: \
-             1\n\tin scenario \"2\"\nscenarios: not all scenarios terminated successfully\n";
+        let expected_stderr = "scenarios: error: command returned non-zero exit code: 1\n\tin \
+                               scenario \"1\"\nscenarios: waiting for unfinished jobs \
+                               ...\nscenarios: command returned non-zero exit code: 1\n\tin \
+                               scenario \"2\"\nscenarios: not all scenarios terminated \
+                               successfully\n";
         let expected_stdout = "";
         let output = Runner::new()
             .scenario_file("many_scenarios.ini")
