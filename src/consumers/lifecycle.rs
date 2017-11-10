@@ -98,8 +98,7 @@ where
     D: LoopDriver<I::Item>,
 {
     // Initialize the control structures.
-    let max_num_tokens = driver.max_num_of_children();
-    let mut stock = TokenStock::new(max_num_tokens);
+    let mut stock = TokenStock::new(driver.max_num_of_children());
     let mut pool = ProcessPool::new();
     // Perform the actual loop.
     let loop_result = loop_inner(&mut stock, &mut pool, items, &mut driver);
@@ -107,11 +106,9 @@ where
         driver.on_loop_failed(err);
     }
     // If any children are left, wait for them.
-    while let Some((child, token)) = pool.wait_reap() {
-        stock.return_token(token);
+    while let Some((child, _)) = pool.wait_reap() {
         driver.on_cleanup_reap(child);
     }
-    debug_assert_eq!(max_num_tokens, stock.num_remaining());
     driver.on_finish()
 }
 
@@ -154,8 +151,7 @@ where
     }
     // If nothing has gone wrong until now, we wait for all child processes
     // to terminate.
-    while let Some((finished_child, token)) = pool.wait_reap() {
-        stock.return_token(token);
+    while let Some((finished_child, _)) = pool.wait_reap() {
         let finished_child = finished_child?;
         driver.on_reap(finished_child)?;
     }
