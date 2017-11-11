@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_invalid_variable_def() {
-        let expected_message = "<memory>:2: syntax error: missing equals sign \"=\" in variable \
+        let expected_message = "<memory>:2: syntax error: no equals sign \"=\" in variable \
                                 definition: \"the bad line\"";
         let file = "[scenario]\nthe bad line";
         assert_eq!(
@@ -479,8 +479,8 @@ mod tests {
 
     #[test]
     fn test_invalid_header() {
-        let expected_message = "<memory>:2: syntax error: text after closing bracket \"]\" of a \
-                                header line: \"[key] = value\"";
+        let expected_message = "<memory>:2: syntax error: closing bracket \"]\" does not end the \
+                                line: \"[key] = value\"";
         let file = get_scenarios("[scenario]\n[key] = value");
         assert_eq!(file.unwrap_err().to_string(), expected_message);
     }
