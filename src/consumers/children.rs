@@ -26,6 +26,7 @@ use super::tokens::{PoolToken, TokenStock};
 /// Convenience alias for `std::result::Result`.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
+
 /// Wrapper type that combines `std::process::Command` with a name.
 ///
 /// This type is returned by `CommandLine` and represents a process
@@ -64,12 +65,14 @@ impl PreparedChild {
     ) -> ::std::result::Result<RunningChild, (Error, PoolToken)> {
         let name = self.name;
         let program = self.program;
-        match self.command.spawn() {
+        let result = self.command
+            .spawn()
+            .map_err(SpawnErrorTag)
+            .context((&name, &program))
+            .map_err(Error::from);
+        match result {
             Ok(child) => Ok(RunningChild { name, program, child, token }),
-            Err(error) => {
-                let kind = SpawnError { program, error }.into();
-                Err((Error { name, kind }, token))
-            },
+            Err(err) => Err((err, token)),
         }
     }
 
@@ -77,7 +80,7 @@ impl PreparedChild {
     ///
     /// If this function fails, it returns `token` to the given `stock`
     /// instead of returning it by-value. This allows this function to
-    /// return a proper `io::Result`.
+    /// return a proper `Result` whose `Err` implements `Error`.
     pub fn spawn_or_return_token(
         self,
         token: PoolToken,
@@ -89,38 +92,6 @@ impl PreparedChild {
                 stock.return_token(token);
                 Err(err)
             },
-        }
-    }
-}
-
-
-/// Error type of `PreparedChild::spawn()`.
-#[derive(Debug)]
-pub struct SpawnError {
-    program: String,
-    error: io::Error,
-}
-
-impl StdError for SpawnError {
-    fn description(&self) -> &str {
-        "error while waiting for job to finish"
-    }
-    fn cause(&self) -> Option<&StdError> {
-        Some(&self.error)
-    }
-}
-
-impl Display for SpawnError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.description(), self.program)
-    }
-}
-
-impl<S: Into<String>> From<Context<S, io::Error>> for SpawnError {
-    fn from(context: Context<S, io::Error>) -> Self {
-        SpawnError {
-            program: context.0.into(),
-            error: context.1,
         }
     }
 }
@@ -143,10 +114,12 @@ impl RunningChild {
     /// Waits for this child to finish running.
     ///
     /// # Errors
-    /// Waiting can theoretically fail. In that case, the name of this
-    /// child is copied into the error type.
+    /// Waiting can theoretically fail.
     pub fn wait(&mut self) -> Result<()> {
-        self._wait().context(self.name.as_str())?;
+        self.child
+            .wait()
+            .map_err(WaitErrorTag)
+            .context((&self.name, &self.program))?;
         Ok(())
     }
 
@@ -159,8 +132,11 @@ impl RunningChild {
     /// # Errors
     /// Waiting can theoretically fail.
     pub fn is_finished(&mut self) -> Result<bool> {
-        let finished = self._try_wait().context(self.name.as_str())?;
-        Ok(finished)
+        let status = self.child
+            .try_wait()
+            .map_err(WaitErrorTag)
+            .context((&self.name, &self.program))?;
+        Ok(status.is_some())
     }
 
     /// Turns the `RunningChild` into a `FinishedChild`.
@@ -171,54 +147,14 @@ impl RunningChild {
     /// Waiting can theoretically fail. The `PoolToken` is returned in
     /// any case.
     pub fn finish(mut self) -> (Result<FinishedChild>, PoolToken) {
-        let result = self._wait()
-            .context(self.name.as_str())
+        let result = self.child
+            .wait()
+            .map_err(WaitErrorTag)
+            .context((&self.name, &self.program))
             .map_err(Error::from);
         let Self { name, program, token, .. } = self;
         let result = result.map(|status| FinishedChild { name, program, status });
         (result, token)
-    }
-
-    fn _wait(&mut self) -> ::std::result::Result<ExitStatus, WaitError> {
-        let status = self.child.wait().context(self.name.as_str())?;
-        Ok(status)
-    }
-
-    fn _try_wait(&mut self) -> ::std::result::Result<bool, WaitError> {
-        let status = self.child.try_wait().context(self.name.as_str())?;
-        Ok(status.is_some())
-    }
-}
-
-
-/// Error type of `RunningChild::wait()`.
-#[derive(Debug)]
-pub struct WaitError {
-    program: String,
-    error: io::Error,
-}
-
-impl StdError for WaitError {
-    fn description(&self) -> &str {
-        "could not execute command"
-    }
-    fn cause(&self) -> Option<&StdError> {
-        Some(&self.error)
-    }
-}
-
-impl Display for WaitError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.description(), self.program)
-    }
-}
-
-impl<S: Into<String>> From<Context<S, io::Error>> for WaitError {
-    fn from(context: Context<S, io::Error>) -> Self {
-        WaitError {
-            program: context.0.into(),
-            error: context.1,
-        }
     }
 }
 
@@ -243,59 +179,33 @@ impl FinishedChild {
     ///
     /// # Errors
     /// If the child exited with a non-zero exit status or through a
-    /// signal, this returns `Err(Error::ChildFailed(status))`.
+    /// signal, this returns an error of kind `ChildFailed`.
     pub fn into_result(self) -> Result<()> {
         if self.status.success() {
             Ok(())
         } else {
-            let kind = ChildFailed {
-                    program: self.program,
-                    status: self.status,
-                }
-                .into();
-            Err(Error { name: self.name, kind })
+            Err(self.status)
+                .context((&self.name, &self.program))
+                .map_err(Error::from)
         }
     }
 }
 
 
-/// Error type of `FinishedChild::into_result()`.
+/// Wrapper type that tags an `io::Error` as coming from a call to
+/// `spawn()`.
+///
+/// This disambiguates the conversion from `io::Error` to `ErrorKind`.
 #[derive(Debug)]
-pub struct ChildFailed {
-    program: String,
-    status: ExitStatus,
-}
-
-impl StdError for ChildFailed {
-    fn description(&self) -> &str {
-        "command returned non-zero exit status"
-    }
-    fn cause(&self) -> Option<&StdError> {
-        None
-    }
-}
-
-impl Display for ChildFailed {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "command \"{}\" exited with {}",
-            self.program,
-            self.status
-        )
-    }
-}
-
-impl<S: Into<String>> From<Context<S, ExitStatus>> for ChildFailed {
-    fn from(context: Context<S, ExitStatus>) -> Self {
-        ChildFailed {
-            program: context.0.into(),
-            status: context.1,
-        }
-    }
-}
+struct SpawnErrorTag(io::Error);
 
 
+/// Wrapper type that tags an `io::Error` as coming from a call to
+/// `wait()`.
+///
+/// This disambiguates the conversion from `io::Error` to `ErrorKind`.
+#[derive(Debug)]
+struct WaitErrorTag(io::Error);
 
 
 /// The error type used by this module.
@@ -320,19 +230,27 @@ impl StdError for Error {
     }
 
     fn cause(&self) -> Option<&StdError> {
-        self.kind.cause()
+        Some(&self.kind)
     }
 }
 
-/// Allows conversion from `ErrorKind` to `Error` in a `Context`.
+/// Converts from `Context` to `Error``.
 ///
-/// This allows you to enrich an `ErrorKind` with the name of the
-/// offending child via `quick_error::ResultExt::context()`.
-impl<S: Into<String>, E: Into<ErrorKind>> From<Context<S, E>> for Error {
-    fn from(context: Context<S, E>) -> Self {
-        let name = context.0.into();
-        let kind = context.1.into();
-        Error { name, kind }
+/// Because `name` is a field of `Error`, but `program` is a field of
+/// `ErrorKind`, it is difficult to pass both via `Context`. This
+/// implementation abstracts that difficult fact away by accepting a
+/// tuple as a context.
+impl<Name, Program, RawError> From<Context<(Name, Program), RawError>> for Error
+where
+    Name: AsRef<str>,
+    Program: AsRef<str>,
+    ErrorKind: From<Context<Program, RawError>>
+{
+    fn from(context: Context<(Name, Program), RawError>) -> Self {
+        let (name, program) = context.0;
+        let raw_error = context.1;
+        let kind = ErrorKind::from(Context(program, raw_error));
+        Error { name: name.as_ref().to_owned(), kind }
     }
 }
 
@@ -341,23 +259,24 @@ quick_error! {
     /// The kinds of errors that can be caused in this module.
     #[derive(Debug)]
     pub enum ErrorKind {
-        SpawnError(err: SpawnError) {
-            description(err.description())
-            display("{}", err)
+        SpawnError(program: String, err: io::Error) {
+            description("could not execute command")
+            display(self_) -> ("{}: {}", self_.description(), program)
             cause(err)
-            from()
+            context(program: AsRef<str>, err: SpawnErrorTag)
+                -> (program.as_ref().to_owned(), err.0)
         }
-        WaitError(err: WaitError) {
-            description(err.description())
-            display("{}", err)
+        WaitError(program: String, err: io::Error) {
+            description("error while waiting for job to finish")
+            display(self_) -> ("{}: {}", self_.description(), program)
             cause(err)
-            from()
+            context(program: AsRef<str>, err: WaitErrorTag) -> (program.as_ref().to_owned(), err.0)
         }
-        ChildFailed(err: ChildFailed) {
-            description(err.description())
-            display("{}", err)
-            cause(err)
-            from()
+        ChildFailed(program: String, status: ExitStatus) {
+            description("command returned non-zero exit status")
+            display("command \"{}\" exited with {}", program, status)
+            context(program: AsRef<str>, status: ExitStatus)
+                -> (program.as_ref().to_owned(), status)
         }
     }
 }
