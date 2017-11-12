@@ -27,7 +27,10 @@
 //! All we are interested in is printing to `stderr` unless a `quiet`
 //! flag is set. Should be simple enough to roll out on our own!
 
+use std::io;
+use std::io::Write;
 use std::fmt::Display;
+use std::error::Error;
 
 
 pub struct Logger<'a> {
@@ -55,5 +58,41 @@ impl<'a> Logger<'a> {
         if !self.quiet {
             eprintln!("{}: {}", self.name, message);
         }
+    }
+
+    /// Prints the given message to stderr, prefixed by `"<prefix>: "`.
+    pub fn log_with_prefix<D: Display>(&self, prefix: &str, message: D) {
+        if !self.quiet {
+            eprintln!("{}: {}, {}", self.name, prefix, message);
+        }
+    }
+
+    /// Acquire exclusive access to the output stream and write to it.
+    ///
+    /// If `quiet` is false, stderr is locked and exclusive access to
+    /// the lock is passed to the closure. If `quiet` is true, nothing
+    /// at all is done.
+    pub fn with_lock<F>(&self, mut func: F)
+    where
+        F: FnMut(&mut io::StderrLock),
+    {
+        if !self.quiet {
+            let stderr = io::stderr();
+            let mut lock = stderr.lock();
+            func(&mut lock)
+        }
+    }
+
+    /// First logs an error, then all its causes.
+    pub fn log_error_chain(&self, mut error: &Error) {
+        self.with_lock(
+            |lock| {
+                writeln!(lock, "{}: error: {}", self.name, error).unwrap();
+                while let Some(cause) = error.cause() {
+                    writeln!(lock, "{}: -> reason: {}", self.name, cause).unwrap();
+                    error = cause;
+                }
+            },
+        )
     }
 }
