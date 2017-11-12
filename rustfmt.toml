@@ -17,6 +17,7 @@ item_brace_style = "SameLineWhere"
 fn_args_density = "Tall"
 generics_style = "Rfc"
 struct_lit_multiline_style = "PreferSingle"
+struct_lit_width = 35
 where_density = "CompressedIfEmpty"
 where_layout = "Vertical"
 where_style = "Rfc"

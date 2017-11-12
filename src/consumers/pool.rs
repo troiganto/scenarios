@@ -113,10 +113,7 @@ pub struct FinishedIter<'a> {
 impl<'a> FinishedIter<'a> {
     /// Creates a new iterator that borrows `pool`'s queue.
     fn new(pool: &'a mut ProcessPool) -> Self {
-        FinishedIter {
-            queue: &mut pool.queue,
-            index: 0,
-        }
+        FinishedIter { queue: &mut pool.queue, index: 0 }
     }
 }
 

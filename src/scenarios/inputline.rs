@@ -77,10 +77,7 @@ impl FromStr for InputLine {
     fn from_str(line: &str) -> Result<Self, Self::Err> {
         let line = line.trim();
         if is_comment(line) {
-            let line = InputLine {
-                content: None,
-                eq_pos: 0,
-            };
+            let line = InputLine { content: None, eq_pos: 0 };
             Ok(line)
         } else if let Some(name) = try_parse_header(line) {
             let line = InputLine {

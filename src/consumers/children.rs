@@ -46,11 +46,7 @@ pub struct PreparedChild<'a> {
 impl<'a> PreparedChild<'a> {
     /// Creates a new `PreparedChild`.
     pub fn new(name: String, program: &'a str, command: Command) -> Self {
-        PreparedChild {
-            name,
-            program,
-            command,
-        }
+        PreparedChild { name, program, command }
     }
 
     /// Turns the `PreparedChild` into a `RunningChild`.

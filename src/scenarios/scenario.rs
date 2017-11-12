@@ -233,19 +233,13 @@ pub struct MergeOptions<'a> {
 
 impl<'a> MergeOptions<'a> {
     fn new(delimiter: &'a str, is_strict: bool) -> Self {
-        MergeOptions {
-            delimiter,
-            is_strict,
-        }
+        MergeOptions { delimiter, is_strict }
     }
 }
 
 impl<'a> Default for MergeOptions<'a> {
     fn default() -> Self {
-        MergeOptions {
-            delimiter: ", ",
-            is_strict: true,
-        }
+        MergeOptions { delimiter: ", ", is_strict: true }
     }
 }
 

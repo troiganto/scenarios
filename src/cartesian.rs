@@ -72,11 +72,7 @@ where
         .map(<&C>::into_iter)
         .collect::<Vec<_>>();
     let next_item = iterators.iter_mut().map(Iterator::next).collect();
-    Product {
-        collections,
-        iterators,
-        next_item,
-    }
+    Product { collections, iterators, next_item }
 }
 
 
