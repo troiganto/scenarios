@@ -197,7 +197,11 @@ impl<S: AsRef<str>> CommandLine<S> {
     pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild> {
         let (name, variables) = scenario.into_parts();
         let command = self.create_command(variables, &name)?;
-        let child = PreparedChild::new(name.into_owned(), self.program().as_ref(), command);
+        let child = PreparedChild::new(
+            name.into_owned(),
+            self.program().as_ref().to_owned(),
+            command,
+        );
         Ok(child)
     }
 
@@ -205,7 +209,8 @@ impl<S: AsRef<str>> CommandLine<S> {
     pub fn with_scenario_ref(&self, scenario: &Scenario) -> Result<PreparedChild> {
         let name = scenario.name();
         let command = self.create_command(scenario.variables(), name)?;
-        let child = PreparedChild::new(name.to_owned(), self.program().as_ref(), command);
+        let child =
+            PreparedChild::new(name.to_owned(), self.program().as_ref().to_owned(), command);
         Ok(child)
     }
 

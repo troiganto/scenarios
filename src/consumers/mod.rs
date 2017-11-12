@@ -16,10 +16,10 @@
 mod pool;
 mod tokens;
 mod printer;
+mod children;
 mod lifecycle;
 mod commandline;
 
-mod children;
 
 pub use self::printer::Printer;
 pub use self::commandline::CommandLine;
