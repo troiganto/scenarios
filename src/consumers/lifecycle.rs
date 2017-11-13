@@ -13,11 +13,11 @@
 // permissions and limitations under the License.
 
 
+use super::errors;
 use super::pool::ProcessPool;
 use super::tokens::TokenStock;
 use super::children::PreparedChild;
 use super::children::FinishedChild;
-use super::children::Error as ChildError;
 
 
 /// The interface used by `loop_in_process_pool()` for callbacks.
@@ -34,7 +34,7 @@ pub trait LoopDriver<Item> {
     ///
     /// Due to static typing, the error of the implementation must be
     /// able to wrap `consumers::children::Error`.
-    type Error: From<ChildError>;
+    type Error: From<errors::Error>;
 
     /// Returns the number of children allowed to run in parallel.
     fn max_num_of_children(&self) -> usize;
@@ -78,7 +78,7 @@ pub trait LoopDriver<Item> {
     /// `ProcessPool` being dropped while still containing running
     /// child processes, which would lead to a double panic, which
     /// terminates the entire program.
-    fn on_cleanup_reap(&mut self, child: Result<FinishedChild, ChildError>);
+    fn on_cleanup_reap(&mut self, child: Result<FinishedChild, errors::Error>);
 
     /// Wraps up the loop after everything else has run.
     ///

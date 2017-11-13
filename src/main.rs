@@ -215,7 +215,7 @@ impl<'a, 's> consumers::LoopDriver<scenarios::Result<Scenario<'s>>> for CommandL
         }
     }
 
-    fn on_cleanup_reap(&mut self, child: Result<FinishedChild, consumers::ChildError>) {
+    fn on_cleanup_reap(&mut self, child: consumers::Result<FinishedChild>) {
         if let Err(err) = child.and_then(FinishedChild::into_result) {
             // Don't convert error to `Self::Error` -- that would add the word
             // "error:" to the log string. But we don't want that because we
@@ -249,13 +249,7 @@ quick_error! {
             cause(err)
             from()
         }
-        VariableNameError(err: consumers::VariableNameError) {
-            description(err.description())
-            display("error: {}", err)
-            cause(err)
-            from()
-        }
-        ChildError(err: consumers::ChildError) {
+        ConsumersError(err: consumers::Error) {
             description(err.description())
             display("error: {}", err)
             cause(err)

@@ -14,22 +14,19 @@
 
 
 use std::ffi::OsStr;
-use std::error::Error;
 use std::process::Command;
-use std::fmt::{self, Display};
+
+use quick_error::ResultExt;
 
 use scenarios::Scenario;
 
 use super::Printer;
 use super::children::PreparedChild;
+use super::errors::{self, Result};
 
 
 /// The name of the environment variable to hold the scenario name.
 const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
-
-
-/// A convenience type for shortening the results in this module.
-type Result<T> = ::std::result::Result<T, VariableNameError>;
 
 
 /// A wrapper around the customization flags of a `CommandLine`.
@@ -233,7 +230,9 @@ impl<S: AsRef<str>> CommandLine<S> {
             cmd.env_clear();
         }
         if self.options.add_scenarios_name && self.options.is_strict {
-            Self::add_vars_checked(&mut cmd, env_vars)?;
+            Self::add_vars_checked(&mut cmd, env_vars)
+                .map_err(errors::ErrorKind::VariableNameError)
+                .context(name.as_ref())?;
         } else {
             cmd.envs(env_vars);
         }
@@ -255,39 +254,19 @@ impl<S: AsRef<str>> CommandLine<S> {
     }
 
     /// Checks the name of each variable before adding it to `cmd`.
-    fn add_vars_checked<I, K, V>(cmd: &mut Command, env_vars: I) -> Result<()>
+    fn add_vars_checked<I, K, V>(cmd: &mut Command, vars: I) -> ::std::result::Result<(), String>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
     {
-        for (k, v) in env_vars.into_iter() {
+        for (k, v) in vars.into_iter() {
             if k.as_ref() == SCENARIOS_NAME_NAME {
-                return Err(VariableNameError);
+                return Err(SCENARIOS_NAME_NAME.to_owned());
             }
             cmd.env(k, v);
         }
         Ok(())
-    }
-}
-
-
-#[derive(Debug)]
-pub struct VariableNameError;
-
-impl Display for VariableNameError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.description())
-    }
-}
-
-impl Error for VariableNameError {
-    fn description(&self) -> &str {
-        "bad variable name: SCENARIOS_NAME"
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        None
     }
 }
 

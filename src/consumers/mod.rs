@@ -15,6 +15,7 @@
 
 mod pool;
 mod tokens;
+mod errors;
 mod printer;
 mod children;
 mod lifecycle;
@@ -29,5 +30,4 @@ pub use self::lifecycle::loop_in_process_pool;
 pub use self::children::PreparedChild;
 pub use self::children::FinishedChild;
 
-pub use self::commandline::VariableNameError;
-pub use self::children::Error as ChildError;
+pub use self::errors::{Error, Result};
