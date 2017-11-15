@@ -28,7 +28,7 @@ mod cartesian;
 mod consumers;
 
 
-use scenarios::{Scenario, ScenarioFile};
+use scenarios::{MergeResult, Scenario, ScenarioFile};
 use consumers::{PreparedChild, FinishedChild};
 
 
@@ -105,7 +105,7 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 /// enabled.
 fn handle_printing<'s, I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
 where
-    I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
+    I: Iterator<Item = MergeResult<Scenario<'s>>>,
 {
     let mut printer = consumers::Printer::default();
     if args.is_present("print0") {
@@ -179,14 +179,14 @@ impl<'a> CommandLineHandler<'a> {
     }
 }
 
-impl<'a, 's> consumers::LoopDriver<scenarios::Result<Scenario<'s>>> for CommandLineHandler<'a> {
+impl<'a, 's> consumers::LoopDriver<MergeResult<Scenario<'s>>> for CommandLineHandler<'a> {
     type Error = Error;
 
     fn max_num_of_children(&self) -> usize {
         self.max_num_of_children
     }
 
-    fn prepare_child(&self, s: scenarios::Result<Scenario<'s>>) -> Result<PreparedChild, Error> {
+    fn prepare_child(&self, s: MergeResult<Scenario<'s>>) -> Result<PreparedChild, Error> {
         let child = self.command_line.with_scenario(s?)?;
         Ok(child)
     }
@@ -243,7 +243,7 @@ quick_error! {
             cause(err)
             from()
         }
-        ScenarioError(err: scenarios::ScenarioError) {
+        MergeError(err: scenarios::MergeError) {
             description(err.description())
             display("error: {}", err)
             cause(err)
