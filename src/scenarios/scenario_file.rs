@@ -17,7 +17,6 @@ use std::fs::File;
 use std::error::Error;
 use std::io::{self, BufRead};
 use std::fmt::{self, Display};
-use std::borrow::{Borrow, ToOwned};
 use std::collections::hash_map::{HashMap, Entry};
 
 use quick_error::{Context, ResultExt};
@@ -231,10 +230,9 @@ impl ParseError {
     ///
     /// `loc` is a `ErrorLocation` borrowing or owning its `filename`.
     /// `kind` is any error that can be converted to `ErrorKind`.
-    fn new<'a, S, E>(loc: ErrorLocation<&'a S>, kind: E) -> Self
+    fn new<S, E>(loc: ErrorLocation<S>, kind: E) -> Self
     where
-        String: Borrow<S>,
-        S: ToOwned<Owned = String> + ?Sized,
+        S: AsRef<str>,
         E: Into<ErrorKind>,
     {
         ParseError(loc.to_owned(), kind.into())
@@ -273,44 +271,12 @@ impl ParseError {
 /// This context is an `ErrorLocation`, i.e. a file name and line
 /// number. These can be put together in an automatic way to build a
 /// proper `ParseError`.
-///
-/// # Example
-///
-/// ```rust
-/// use scenarios::location::ErrorLocation;
-/// use scenarios::scenario_file::{ParseError, ErrorKind};
-/// use quick_error::ResultExt;
-///
-/// let lines = vec!["a", "b", "c"];
-/// let err = returns_parse_error(lines).unwrap_err();
-/// assert_eq!(err.lineno(), Some(2));
-///
-/// fn returns_parse_error<I>(lines: I) -> Result<(), ParseError>
-/// where
-///     I: Iterator<Item = str>
-/// {
-///     let location = ErrorLocation::new("file");
-///     for line in lines {
-///         location.lineno += 1;
-///         fails_on_b(&line).context(location)?;
-///     }
-/// }
-///
-/// fn fails_on_b(line: &str) -> Result<(), ErrorKind> {
-///     if line != "b" {
-///         Ok(())
-///     } else {
-///         Err(ErrorKind::UnexpectedVardef(line.into())
-///     }
-/// }
-/// ```
-impl<'a, S, E> From<Context<ErrorLocation<&'a S>, E>> for ParseError
+impl<S, E> From<Context<ErrorLocation<S>, E>> for ParseError
 where
-    String: Borrow<S>,
-    S: ToOwned<Owned=String> + ?Sized,
+    S: AsRef<str>,
     E: Into<ErrorKind>,
 {
-    fn from(context: Context<ErrorLocation<&'a S>, E>) -> Self {
+    fn from(context: Context<ErrorLocation<S>, E>) -> Self {
         ParseError::new(context.0, context.1)
     }
 }
