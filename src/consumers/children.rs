@@ -13,11 +13,11 @@
 // permissions and limitations under the License.
 
 
+use std::io;
 use std::process::{Command, Child, ExitStatus};
 
-use quick_error::ResultExt;
+use failure::{Error, ResultExt};
 
-use super::errors::{self, Result};
 use super::tokens::{PoolToken, TokenStock};
 
 
@@ -53,19 +53,16 @@ impl PreparedChild {
     /// Spawning a process can fail. In such a case, this function
     /// returns both the error that occurred, and the passed
     /// `PoolToken`. This ensures that no token is lost.
-    pub fn spawn(
-        mut self,
-        token: PoolToken,
-    ) -> ::std::result::Result<RunningChild, (errors::Error, PoolToken)> {
+    pub fn spawn(mut self, token: PoolToken) -> Result<RunningChild, (Error, PoolToken)> {
         let name = self.name;
         let program = self.program;
         let result = self.command
             .spawn()
-            .map_err(errors::SpawnErrorTag)
-            .context((&name, &program))
-            .map_err(errors::Error::from);
+            .map_err(|cause| SpawnFailed { cause, name: program.clone() })
+            .with_context(|_| ScenarioNotStarted(name.clone()))
+            .map_err(Error::from);
         match result {
-            Ok(child) => Ok(RunningChild { name, program, child, token }),
+            Ok(child) => Ok(RunningChild { name, child, token }),
             Err(err) => Err((err, token)),
         }
     }
@@ -79,7 +76,7 @@ impl PreparedChild {
         self,
         token: PoolToken,
         stock: &mut TokenStock,
-    ) -> Result<RunningChild> {
+    ) -> Result<RunningChild, Error> {
         match self.spawn(token) {
             Ok(child) => Ok(child),
             Err((err, token)) => {
@@ -99,24 +96,11 @@ impl PreparedChild {
 #[derive(Debug)]
 pub struct RunningChild {
     name: String,
-    program: String,
     child: Child,
     token: PoolToken,
 }
 
 impl RunningChild {
-    /// Waits for this child to finish running.
-    ///
-    /// # Errors
-    /// Waiting can theoretically fail.
-    pub fn wait(&mut self) -> Result<()> {
-        self.child
-            .wait()
-            .map_err(errors::WaitErrorTag)
-            .context((&self.name, &self.program))?;
-        Ok(())
-    }
-
     /// Checks whether this child has finished running.
     ///
     /// This waits for the child in a non-blocking manner. If it has
@@ -125,11 +109,11 @@ impl RunningChild {
     ///
     /// # Errors
     /// Waiting can theoretically fail.
-    pub fn is_finished(&mut self) -> Result<bool> {
+    pub fn is_finished(&mut self) -> Result<bool, Error> {
         let status = self.child
             .try_wait()
-            .map_err(errors::WaitErrorTag)
-            .context((&self.name, &self.program))?;
+            .with_context(|_| WaitFailed)
+            .with_context(|_| ScenarioFailed(self.name.clone()))?;
         Ok(status.is_some())
     }
 
@@ -140,14 +124,14 @@ impl RunningChild {
     /// # Errors
     /// Waiting can theoretically fail. The `PoolToken` is returned in
     /// any case.
-    pub fn finish(mut self) -> (Result<FinishedChild>, PoolToken) {
+    pub fn finish(mut self) -> (Result<FinishedChild, Error>, PoolToken) {
         let result = self.child
             .wait()
-            .map_err(errors::WaitErrorTag)
-            .context((&self.name, &self.program))
-            .map_err(errors::Error::from);
-        let Self { name, program, token, .. } = self;
-        let result = result.map(|status| FinishedChild { name, program, status });
+            .with_context(|_| WaitFailed)
+            .with_context(|_| ScenarioFailed(self.name.clone()))
+            .map_err(Error::from);
+        let Self { name, token, .. } = self;
+        let result = result.map(|status| FinishedChild { name, status });
         (result, token)
     }
 }
@@ -161,7 +145,6 @@ impl RunningChild {
 #[derive(Debug)]
 pub struct FinishedChild {
     name: String,
-    program: String,
     status: ExitStatus,
 }
 
@@ -174,13 +157,53 @@ impl FinishedChild {
     /// # Errors
     /// If the child exited with a non-zero exit status or through a
     /// signal, this returns an error of kind `ChildFailed`.
-    pub fn into_result(self) -> Result<()> {
+    pub fn into_result(self) -> Result<(), Error> {
         if self.status.success() {
             Ok(())
         } else {
-            Err(self.status)
-                .context((&self.name, &self.program))
-                .map_err(errors::Error::from)
+            Err(ChildFailed(self.status))
+                .with_context(|_| ScenarioFailed(self.name.clone()))
+                .map_err(Error::from)
         }
     }
 }
+
+
+/// The error used to signify that a scenario couldn't even be started.
+#[derive(Debug, Fail)]
+#[fail(display = "could not start scenario \"{}\"", _0)]
+pub struct ScenarioNotStarted(pub String);
+
+
+/// The error used to say that a scenario was started, but then failed.
+#[derive(Debug, Fail)]
+#[fail(display = "scenario did not finish successfully: \"{}\"", _0)]
+pub struct ScenarioFailed(pub String);
+
+
+/// Starting up a new child process failed.
+#[derive(Debug, Fail)]
+#[fail(display = "could not execute command \"{}\"", name)]
+pub struct SpawnFailed {
+    name: String,
+    #[cause]
+    cause: io::Error,
+}
+
+
+/// Waiting for a child process's completion failed.
+///
+/// `Child::wait()` can fail for any number of platform-dependent
+/// reasons. We do the conservative thing and assume the child lost as
+/// soon as `wait()` errors even once.
+#[derive(Debug, Fail)]
+#[fail(display = "failed to wait for job to finish")]
+pub struct WaitFailed;
+
+
+/// A child process has exited in a non-successful manner.
+///
+/// This can mean a non-zero exit status or exit by signal.
+#[derive(Debug, Fail)]
+#[fail(display = "job exited with non-zero {}", _0)]
+pub struct ChildFailed(ExitStatus);

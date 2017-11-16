@@ -25,6 +25,3 @@ pub use self::scenario_file::ScenariosIter;
 
 pub use self::scenario::MergeError;
 pub use self::scenario::ScenarioError;
-pub use self::scenario_file::ParseError;
-
-pub use self::scenario::MergeResult;

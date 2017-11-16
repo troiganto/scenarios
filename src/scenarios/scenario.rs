@@ -13,16 +13,11 @@
 // permissions and limitations under the License.
 
 
-use std::error::Error;
 use std::iter::FromIterator;
 use std::fmt::{self, Display};
 use std::borrow::{Borrow, Cow};
 use std::collections::hash_map::{self, HashMap};
 
-use quick_error::{Context, ResultExt};
-
-
-pub type MergeResult<T> = Result<T, MergeError>;
 
 /// Named set of environment variable definitions.
 ///
@@ -119,7 +114,7 @@ impl<'a> Scenario<'a> {
     /// # Panics
     /// This function panics if `scenarios` turns into an empty
     /// iterator.
-    pub fn merge_all<I>(scenarios: I, opts: MergeOptions) -> MergeResult<Self>
+    pub fn merge_all<I>(scenarios: I, opts: MergeOptions) -> Result<Self, MergeError>
     where
         I: IntoIterator,
         I::IntoIter: Clone,
@@ -161,14 +156,14 @@ impl<'a> Scenario<'a> {
     /// #Errors
     /// If `ops.strict` is `true` and both scenarios define the same
     /// variable, `MergeError` is returned.
-    pub fn merge(&mut self, other: &Scenario<'a>, opts: MergeOptions) -> MergeResult<()> {
+    pub fn merge(&mut self, other: &Scenario<'a>, opts: MergeOptions) -> Result<(), MergeError> {
         // Turn (&&str, &&str) iterator into (&str, &str) iterator.
         let other_vars = other.variables().map(|(&k, &v)| (k, v));
         // Merge variable definitions first, then the scenario names. If we
         // merged names before the variables, the error message would contain
         // the already-merged name.
         self.merge_vars(other_vars, opts.is_strict)
-            .context((self.name(), other.name()))?;
+            .map_err(|var| MergeError::new(var, self.name(), other.name()))?;
         self.merge_name(opts.delimiter, &other.name);
         Ok(())
     }
@@ -238,52 +233,12 @@ impl<'a> Default for MergeOptions<'a> {
 }
 
 
-/// Opaque elper type for `ScenarioError::StrictMergeFailed`.
-#[derive(Debug)]
-pub struct MergeError {
-    varname: String,
-    left: String,
-    right: String,
-}
-
-impl Error for MergeError {
-    fn description(&self) -> &str {
-        "conflicting variable definitions"
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        None
-    }
-}
-
-impl Display for MergeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "variable \"{}\" defined both in scenario \"{}\" and in scenario \"{}\"",
-            self.varname,
-            self.left,
-            self.right
-        )
-    }
-}
-
-impl<'a> From<Context<(&'a str, &'a str), String>> for MergeError {
-    fn from(context: Context<(&'a str, &'a str), String>) -> Self {
-        let (left, right) = context.0;
-        MergeError {
-            varname: context.1,
-            left: left.to_owned(),
-            right: right.to_owned(),
-        }
-    }
-}
-
-
 /// A zero-sized type that implements `FromIterator`.
 ///
 /// This allows us to call `Iterator::collect<Result<_>>` without
 /// creating a vector when item type of the iterator is `()`.
+///
+/// TODO: Wait for `impl FromIterator<()> for ()` to be stabilized.
 struct Nothing;
 
 impl FromIterator<()> for Nothing {
@@ -336,21 +291,39 @@ where
 }
 
 
-quick_error! {
-    /// Errors caused during building a scenario.
-    #[derive(Debug)]
-    pub enum ScenarioError {
-        InvalidName(name: String) {
-            description("invalid scenario name")
-            display(err) -> ("{}: \"{}\"", err.description(), name)
-        }
-        InvalidVariable(name: String) {
-            description("invalid variable name")
-            display(err) -> ("{}: \"{}\"", err.description(), name)
-        }
-        DuplicateVariable(name: String) {
-            description("variable already defined")
-            display(err) -> ("{}: \"{}\"", err.description(), name)
+/// Errors caused during building a scenario.
+#[derive(Debug, Fail)]
+pub enum ScenarioError {
+    #[fail(display = "invalid scenario name: \"{}\"", _0)]
+    InvalidName(String),
+    #[fail(display = "invalid variable name: \"{}\"", _0)]
+    InvalidVariable(String),
+    #[fail(display = "variable already defined: \"{}\"", _0)]
+    DuplicateVariable(String),
+}
+
+
+/// Errors caused by conflicting variables during merging of scenarios.
+#[derive(Debug, Fail)]
+#[fail(display = "variable \"{}\" defined both in scenario \"{}\" and in scenario \"{}\"",
+       varname, left, right)]
+pub struct MergeError {
+    varname: String,
+    left: String,
+    right: String,
+}
+
+impl MergeError {
+    fn new<V, L, R>(varname: V, left: L, right: R) -> Self
+    where
+        V: Into<String>,
+        L: Into<String>,
+        R: Into<String>,
+    {
+        MergeError {
+            varname: varname.into(),
+            left: left.into(),
+            right: right.into(),
         }
     }
 }

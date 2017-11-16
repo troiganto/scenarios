@@ -13,7 +13,8 @@
 // permissions and limitations under the License.
 
 
-use super::errors;
+use failure::Error;
+
 use super::pool::ProcessPool;
 use super::tokens::TokenStock;
 use super::children::PreparedChild;
@@ -30,12 +31,6 @@ use super::children::FinishedChild;
 /// any time. (Note that nonetheless, all child processes are always
 /// waited for!)
 pub trait LoopDriver<Item> {
-    /// The error type used by this type.
-    ///
-    /// Due to static typing, the error of the implementation must be
-    /// able to wrap `consumers::children::Error`.
-    type Error: From<errors::Error>;
-
     /// Returns the number of children allowed to run in parallel.
     fn max_num_of_children(&self) -> usize;
 
@@ -46,7 +41,7 @@ pub trait LoopDriver<Item> {
     /// convert the items yielded by the iterator to
     /// `PreparedChild`ren. If this isn't possible, an error should be
     /// returned, which aborts the loop.
-    fn prepare_child(&self, item: Item) -> Result<PreparedChild, Self::Error>;
+    fn prepare_child(&self, item: Item) -> Result<PreparedChild, Error>;
 
     /// Handles any child processes that have terminated.
     ///
@@ -54,7 +49,7 @@ pub trait LoopDriver<Item> {
     /// the terminated process. If everything is alright, this function
     /// should return `Ok(())`. If the loop should be aborted, this
     /// function should return an error.
-    fn on_reap(&mut self, child: FinishedChild) -> Result<(), Self::Error>;
+    fn on_reap(&mut self, child: FinishedChild) -> Result<(), Error>;
 
     /// Observes whether the loop terminated successfully.
     ///
@@ -65,7 +60,7 @@ pub trait LoopDriver<Item> {
     /// If `error` should be the over-all result of the call to
     /// `loop_in_process_pool()`, the driver must hold onto it and
     /// return it later from `LoopDriver::on_finish()`.
-    fn on_loop_failed(&mut self, error: Self::Error);
+    fn on_loop_failed(&mut self, error: Error);
 
     /// Like `reap()` but called from the clean-up loop.
     ///
@@ -78,14 +73,14 @@ pub trait LoopDriver<Item> {
     /// `ProcessPool` being dropped while still containing running
     /// child processes, which would lead to a double panic, which
     /// terminates the entire program.
-    fn on_cleanup_reap(&mut self, child: Result<FinishedChild, errors::Error>);
+    fn on_cleanup_reap(&mut self, child: Result<FinishedChild, Error>);
 
     /// Wraps up the loop after everything else has run.
     ///
     /// This function determines the result of the over-all call to
     /// `loop_in_process_pool()`. It gives the driver a chance to e.g.
     /// pop any errors it has previously pushed out of the way.
-    fn on_finish(self) -> Result<(), Self::Error>;
+    fn on_finish(self) -> Result<(), Error>;
 }
 
 
@@ -106,7 +101,7 @@ pub trait LoopDriver<Item> {
 /// - spawning a child process fails;
 /// - waiting on a child process fails;
 /// - any one of the calls to `driver` fails.
-pub fn loop_in_process_pool<I, D>(items: I, mut driver: D) -> Result<(), D::Error>
+pub fn loop_in_process_pool<I, D>(items: I, mut driver: D) -> Result<(), Error>
 where
     I: IntoIterator,
     D: LoopDriver<I::Item>,
@@ -140,7 +135,7 @@ fn loop_inner<I, D>(
     pool: &mut ProcessPool,
     items: I,
     driver: &mut D,
-) -> Result<(), D::Error>
+) -> Result<(), Error>
 where
     I: IntoIterator,
     D: LoopDriver<I::Item>,

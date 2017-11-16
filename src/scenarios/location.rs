@@ -24,9 +24,7 @@ use std::fmt::{self, Display};
 ///
 /// The type parameter `S` serves to abstract over the name being given
 /// as a `&str` or a `String`. The methods `as_ref` and `to_owned` help
-/// to convert between these two cases. (Note that these are inherent
-/// methods. This type implements neither `AsRef` nor `Borrow` nor
-/// `ToOwned` beyond `std`'s blanket implementations.)
+/// to convert between these two cases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ErrorLocation<S: AsRef<str>> {
     /// The file's name or path.
@@ -54,8 +52,7 @@ impl<S: AsRef<str>> ErrorLocation<S> {
     }
 
     /// Creates a new error location that borrows from `self`.
-    pub fn as_ref(&self) -> ErrorLocation<&str>
-    {
+    pub fn as_ref(&self) -> ErrorLocation<&str> {
         ErrorLocation {
             filename: self.filename.as_ref(),
             lineno: self.lineno,
@@ -79,9 +76,9 @@ impl<S: AsRef<str>> ErrorLocation<S> {
 impl<S: AsRef<str>> Display for ErrorLocation<S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.lineno != 0 {
-            write!(f, "{}:{}", self.filename.as_ref(), self.lineno)
+            write!(f, "in {}:{}", self.filename.as_ref(), self.lineno)
         } else {
-            write!(f, "{}", self.filename.as_ref())
+            write!(f, "file \"{}\"", self.filename.as_ref())
         }
     }
 }

@@ -16,13 +16,12 @@
 use std::ffi::OsStr;
 use std::process::Command;
 
-use quick_error::ResultExt;
+use failure::{Error, ResultExt};
 
 use scenarios::Scenario;
 
 use super::Printer;
-use super::children::PreparedChild;
-use super::errors::{self, Result};
+use super::children::{PreparedChild, ScenarioNotStarted};
 
 
 /// The name of the environment variable to hold the scenario name.
@@ -191,7 +190,7 @@ impl<S: AsRef<str>> CommandLine<S> {
     /// a variable definition for `SCENARIOS_NAME` even though this
     /// command line is instructed to add such a variable itself. (See
     /// documentation of `Options` for more information.)
-    pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild> {
+    pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild, Error> {
         let (name, variables) = scenario.into_parts();
         let command = self.create_command(variables, &name)?;
         let program = self.program().as_ref().to_owned();
@@ -199,7 +198,7 @@ impl<S: AsRef<str>> CommandLine<S> {
     }
 
     /// Like `with_scenario`, but does not consume the `Scenario`.
-    pub fn with_scenario_ref(&self, scenario: &Scenario) -> Result<PreparedChild> {
+    pub fn with_scenario_ref(&self, scenario: &Scenario) -> Result<PreparedChild, Error> {
         let name = scenario.name().to_owned();
         let program = self.program().as_ref().to_owned();
         let command = self.create_command(scenario.variables(), &name)?;
@@ -207,7 +206,7 @@ impl<S: AsRef<str>> CommandLine<S> {
     }
 
     /// Internal implementation of `with_scenario`.
-    fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command>
+    fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command, Error>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -226,8 +225,8 @@ impl<S: AsRef<str>> CommandLine<S> {
         }
         if self.options.add_scenarios_name && self.options.is_strict {
             Self::add_vars_checked(&mut cmd, env_vars)
-                .map_err(errors::ErrorKind::VariableNameError)
-                .context(name.as_ref())?;
+                .map_err(ReservedVarName)
+                .with_context(|_| ScenarioNotStarted(name.as_ref().to_owned()))?;
         } else {
             cmd.envs(env_vars);
         }
@@ -249,7 +248,7 @@ impl<S: AsRef<str>> CommandLine<S> {
     }
 
     /// Checks the name of each variable before adding it to `cmd`.
-    fn add_vars_checked<I, K, V>(cmd: &mut Command, vars: I) -> ::std::result::Result<(), String>
+    fn add_vars_checked<I, K, V>(cmd: &mut Command, vars: I) -> Result<(), String>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -264,6 +263,12 @@ impl<S: AsRef<str>> CommandLine<S> {
         Ok(())
     }
 }
+
+
+/// The error type used by `with_scenario()`.
+#[derive(Debug, Fail)]
+#[fail(display = "use of reserved variable name: \"{}\" (strict mode is enabled)", _0)]
+pub struct ReservedVarName(String);
 
 
 #[cfg(test)]

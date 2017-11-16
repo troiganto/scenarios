@@ -14,18 +14,28 @@
 
 
 use std::fs::File;
-use std::error::Error;
 use std::io::{self, BufRead};
-use std::fmt::{self, Display};
 use std::collections::hash_map::{HashMap, Entry};
 
-use quick_error::{Context, ResultExt};
+use failure::{Error, Fail, ResultExt};
 
 use super::location::ErrorLocation;
-use super::scenario::{Scenario, ScenarioError};
-use super::inputline::{InputLine, SyntaxError};
+use super::scenario::Scenario;
+use super::inputline::InputLine;
 
 
+/// Type that represents a scenario file.
+///
+/// Creating an instance of this type means to open a file or other
+/// `Read`able object and read a sequence of `InputLine`s from it. When
+/// producing scenarios from this file, these input lines are parsed
+/// and turned into scenarios.
+///
+/// Scenarios borror from this type. Its prime purpose is to serve as
+/// the owner of all the strings `Scenario` uses. This separation
+/// allows us to use a `HashMap<&str, &str>` in `Scenario`, instead of
+/// a `HashMap<String, String>`. This, in turn, allows us evade many
+/// pointless copies.
 #[derive(Debug)]
 pub struct ScenarioFile<'a> {
     filename: &'a str,
@@ -39,19 +49,20 @@ impl<'a> ScenarioFile<'a> {
     /// Otherwise, it reads from the regular file located at `path`.
     ///
     /// See `new()` for more information.
-    pub fn from_file_or_stdin(path: &str, is_strict: bool) -> Result<ScenarioFile, ParseError> {
+    pub fn from_file_or_stdin(path: &str, is_strict: bool) -> Result<ScenarioFile, Error> {
         let stdin = io::stdin();
         if path == "-" {
             Self::new(stdin.lock(), "<stdin>", is_strict)
         } else {
-            let file = File::open(path).context(ErrorLocation::new(path))?;
+            let file = File::open(path)
+                .with_context(|_| ErrorLocation::new(path.to_owned()))?;
             let file = io::BufReader::new(file);
             Self::new(file, path, is_strict)
         }
     }
 
     /// Reads scenarios from a given buffered reader.
-    pub fn new<F>(reader: F, filename: &str, is_strict: bool) -> Result<ScenarioFile, ParseError>
+    pub fn new<F>(reader: F, filename: &str, is_strict: bool) -> Result<ScenarioFile, Error>
     where
         F: BufRead,
     {
@@ -65,7 +76,7 @@ impl<'a> ScenarioFile<'a> {
     }
 
     /// Reads lines from `reader`, parses them, and keeps them.
-    fn read_from<F: BufRead>(&mut self, mut reader: F) -> Result<(), ParseError> {
+    fn read_from<F: BufRead>(&mut self, mut reader: F) -> Result<(), Error> {
         let mut loc = ErrorLocation::new(self.filename);
         let mut buffer = String::new();
         loop {
@@ -73,11 +84,15 @@ impl<'a> ScenarioFile<'a> {
             // end of the loop, an error in the first line would be
             // reported as "error in line 0".
             loc.lineno += 1;
-            let num_bytes = reader.read_line(&mut buffer).context(loc)?;
+            let num_bytes = reader
+                .read_line(&mut buffer)
+                .with_context(|_| loc.to_owned())?;
             if num_bytes == 0 {
                 break;
             }
-            let line = buffer.parse::<InputLine>().context(loc)?;
+            let line = buffer
+                .parse::<InputLine>()
+                .with_context(|_| loc.to_owned())?;
             self.lines.push(line);
             buffer.clear();
         }
@@ -85,7 +100,7 @@ impl<'a> ScenarioFile<'a> {
     }
 
     /// Returns an error if two header lines have the same content.
-    fn check_for_duplicate_headers(&self) -> Result<(), ParseError> {
+    fn check_for_duplicate_headers(&self) -> Result<(), Error> {
         let mut seen_headers = HashMap::new();
         let mut loc = ErrorLocation::new(self.filename);
         for line in self.lines.iter() {
@@ -100,11 +115,16 @@ impl<'a> ScenarioFile<'a> {
                     Entry::Vacant(entry) => {
                         entry.insert(loc.lineno);
                     },
-                    Entry::Occupied(entry) => {
-                        let header = header.to_owned();
-                        let previous_lineno = *entry.get();
-                        Err(ErrorKind::ScenarioExists(header, previous_lineno))
-                            .context(loc)?;
+                    Entry::Occupied(prev_lineno_entry) => {
+                        let prev_loc = ErrorLocation::with_lineno(
+                            self.filename.to_owned(),
+                            *prev_lineno_entry.get(),
+                        );
+                        let err = DuplicateScenarioName(header.to_owned())
+                            .context(loc.to_owned())
+                            .context(prev_loc)
+                            .into();
+                        return Err(err);
                     },
                 }
             }
@@ -154,7 +174,7 @@ impl<'a> ScenariosIter<'a> {
     /// # Errors
     /// * `io::Error` if a line cannot be read.
     /// * `inputline::SyntaxError` if a line cannot be interpreted.
-    fn next_scenario(&mut self) -> Result<Option<Scenario<'a>>, ErrorKind> {
+    fn next_scenario(&mut self) -> Result<Option<Scenario<'a>>, Error> {
         let mut scenario = match self.next_header_line()? {
             Some(line) => Scenario::new(line)?,
             None => return Ok(None),
@@ -171,13 +191,13 @@ impl<'a> ScenariosIter<'a> {
     /// If a definition line is found, the line counter is still
     /// incremented, but a `ScenarioError::UnexpectedVarDef` is
     /// returned.
-    fn next_header_line(&mut self) -> Result<Option<&'a str>, ErrorKind> {
+    fn next_header_line(&mut self) -> Result<Option<&'a str>, UnexpectedVarDef> {
         while let Some(line) = self.lines.get(self.location.lineno) {
             self.location.lineno += 1;
             if let Some(header) = line.header() {
                 return Ok(Some(header));
             } else if let Some(name) = line.definition_name() {
-                return Err(ErrorKind::UnexpectedVarDef(name.into()));
+                return Err(UnexpectedVarDef(name.to_owned()));
             }
         }
         Ok(None)
@@ -206,131 +226,33 @@ impl<'a> ScenariosIter<'a> {
 }
 
 impl<'a> Iterator for ScenariosIter<'a> {
-    type Item = Result<Scenario<'a>, ParseError>;
+    type Item = Result<Scenario<'a>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.next_scenario().context(self.location) {
+        match self.next_scenario()
+                  .with_context(|_| self.location.to_owned()) {
             Ok(None) => None,
             Ok(Some(scenario)) => Some(Ok(scenario)),
-            Err(context) => Some(Err(ParseError::from(context))),
+            Err(context) => Some(Err(Error::from(context))),
         }
     }
 }
 
 
-/// An error that occured while handling a specific file.
+/// The error returned for unexpected variable definitions.
 ///
-/// It is typically created by taking an `ErrorKind` and supplying it
-/// with some `quick_error::Context`.
-#[derive(Debug)]
-pub struct ParseError(ErrorLocation<String>, ErrorKind);
-
-impl ParseError {
-    /// Creates a new `ParseError`, performing coercions as necessary.
-    ///
-    /// `loc` is a `ErrorLocation` borrowing or owning its `filename`.
-    /// `kind` is any error that can be converted to `ErrorKind`.
-    fn new<S, E>(loc: ErrorLocation<S>, kind: E) -> Self
-    where
-        S: AsRef<str>,
-        E: Into<ErrorKind>,
-    {
-        ParseError(loc.to_owned(), kind.into())
-    }
-
-    /// Returns the name of the file in which the error occurred.
-    pub fn filename(&self) -> &str {
-        &self.0.filename
-    }
-
-    /// Returns the error's line number, if any.
-    ///
-    /// If the error is not associated with a particular line, this
-    /// returns `None`. Otherwise, it returns the line number, starting
-    /// at `1` for the first line.
-    ///
-    /// In short, this never returns `Some(0)`.
-    pub fn lineno(&self) -> Option<usize> {
-        if self.0.lineno != 0 {
-            Some(self.0.lineno)
-        } else {
-            None
-        }
-    }
-
-    /// Returns the kind of error that happened.
-    pub fn kind(&self) -> &ErrorKind {
-        &self.1
-    }
-}
-
-/// Build a `ParseError` from an `ErrorKind` in a `Context`.
-///
-/// This uses the *context* mechanism of `quick_error`. Given a value
-/// of type `Result<_, ErrorKind>`, we can supply it with a `Context`.
-/// This context is an `ErrorLocation`, i.e. a file name and line
-/// number. These can be put together in an automatic way to build a
-/// proper `ParseError`.
-impl<S, E> From<Context<ErrorLocation<S>, E>> for ParseError
-where
-    S: AsRef<str>,
-    E: Into<ErrorKind>,
-{
-    fn from(context: Context<ErrorLocation<S>, E>) -> Self {
-        ParseError::new(context.0, context.1)
-    }
-}
-
-impl Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.0, self.1)
-    }
-}
-
-impl Error for ParseError {
-    fn description(&self) -> &str {
-        self.1.description()
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        self.1.cause()
-    }
-}
+/// A variable definition is unexpected if it appears in the scenario
+/// file before any scenario has been declared – i.e. before the first
+/// header line.
+#[derive(Debug, Fail)]
+#[fail(display = "variable definition before the first header: \"{}\"", _0)]
+pub struct UnexpectedVarDef(String);
 
 
-quick_error! {
-    /// Any type of error that occurs during parsing of scenario files.
-    #[derive(Debug)]
-    pub enum ErrorKind {
-        IoError(err: io::Error) {
-            description(err.description())
-            display("{}", err)
-            cause(err)
-            from()
-        }
-        SyntaxError(err: SyntaxError) {
-            description(err.description())
-            display("{}", err)
-            cause(err)
-            from()
-        }
-        ScenarioError(err: ScenarioError) {
-            description(err.description())
-            display("{}", err)
-            cause(err)
-            from()
-        }
-        UnexpectedVarDef(name: String) {
-            description("variable definition before the first header")
-            display(err) -> ("{}: \"{}\"", err.description(), name)
-        }
-        ScenarioExists(name: String, previous_lineno: usize) {
-            description("scenario already exists")
-            display(err) -> ("{}: \"{}\" (first occurrence on line {})",
-                             err.description(), name, previous_lineno)
-        }
-    }
-}
+/// The error returned if two scenarios share the same name.
+#[derive(Debug, Fail)]
+#[fail(display = "duplicate scenario name: \"{}\"", _0)]
+pub struct DuplicateScenarioName(String);
 
 
 #[cfg(test)]
