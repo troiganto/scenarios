@@ -6,6 +6,6 @@ description = "Run a command line multiple times in different environments."
 
 [dependencies]
 num_cpus = "*"
-failure = { git = "https://github.com/withoutboats/failure" }
+failure = "*"
 failure_derive = "*"
 clap = { version = "*", default-features = false, features = ["wrap_help"] }
