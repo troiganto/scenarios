@@ -387,11 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_none() {
-        match Scenario::merge_all(&[], MergeOptions::default()).unwrap_err() {
-            ScenarioError::NoScenarios => {},
-            err => panic!("wrong error: {}", err),
-        }
+    #[should_panic]
+    fn test_merge_none_panics() {
+        let _ = Scenario::merge_all(&[], MergeOptions::default());
     }
 
     #[test]

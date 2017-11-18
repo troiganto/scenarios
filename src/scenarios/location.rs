@@ -91,12 +91,12 @@ mod tests {
     #[test]
     fn test_display() {
         let s = ErrorLocation::with_lineno("scenario.ini", 20).to_string();
-        assert_eq!(s, "scenario.ini:20");
+        assert_eq!(s, "in scenario.ini:20");
     }
 
     #[test]
     fn test_display_without_lineno() {
         let s = ErrorLocation::new("scenario.ini").to_string();
-        assert_eq!(s, "scenario.ini");
+        assert_eq!(s, "file \"scenario.ini\"");
     }
 }

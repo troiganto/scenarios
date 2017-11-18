@@ -263,11 +263,11 @@ mod tests {
     use std::io::Cursor;
 
 
-    fn get_scenarios(contents: &str) -> Result<ScenarioFile, ParseError> {
+    fn get_scenarios(contents: &str) -> Result<ScenarioFile, Error> {
         ScenarioFile::new(Cursor::new(contents), "<memory>", true)
     }
 
-    fn get_scenarios_lax(contents: &str) -> Result<ScenarioFile, ParseError> {
+    fn get_scenarios_lax(contents: &str) -> Result<ScenarioFile, Error> {
         ScenarioFile::new(Cursor::new(contents), "<memory>", false)
     }
 
@@ -325,13 +325,13 @@ mod tests {
 
     #[test]
     fn test_non_unique_names() {
-        let expected_message = "<memory>:5: scenario already exists: \"second\" (first occurrence \
-                                on line 2)";
-        let file = "[first]\n[second]\n\n[third]\n[second]";
-        assert_eq!(
-            get_scenarios(file).unwrap_err().to_string(),
-            expected_message
-        );
+        let err = get_scenarios("[first]\n[second]\n\n[third]\n[second]").unwrap_err();
+        let mut err = err.cause();
+        assert_eq!(err.to_string(), "in <memory>:2");
+        err = err.cause().unwrap();
+        assert_eq!(err.to_string(), "in <memory>:5");
+        err = err.cause().unwrap();
+        assert_eq!(err.to_string(), "duplicate scenario name: \"second\"");
     }
 
     #[test]
@@ -344,54 +344,60 @@ mod tests {
 
     #[test]
     fn test_invalid_variable_def() {
-        let expected_message = "<memory>:2: syntax error: no equals sign \"=\" in variable \
-                                definition: \"the bad line\"";
-        let file = "[scenario]\nthe bad line";
+        let err = get_scenarios("[scenario]\nthe bad line").unwrap_err();
+        let mut err = err.cause();
+        assert_eq!(err.to_string(), "in <memory>:2");
+        err = err.cause().unwrap();
         assert_eq!(
-            get_scenarios(file).unwrap_err().to_string(),
-            expected_message
+            err.to_string(),
+            "no equals sign \"=\" in variable definition: \"the bad line\""
         );
     }
 
     #[test]
     fn test_variable_already_defined() {
-        let expected_message = "<memory>:3: variable already defined: \"varname\"";
-        let file = r"[scenario]
-        varname = value
-        varname = other value
-        ";
-        let file = get_scenarios(file).unwrap();
-        let scenarios = file.iter().collect::<Result<Vec<_>, _>>();
-        assert_eq!(scenarios.unwrap_err().to_string(), expected_message);
+        let file = get_scenarios("[scenario]\na = b\na = c\n").unwrap();
+        let err = file.iter().collect::<Result<Vec<_>, _>>().unwrap_err();
+        let mut err = err.cause();
+        assert_eq!(err.to_string(), "in <memory>:3");
+        err = err.cause().unwrap();
+        assert_eq!(err.to_string(), "variable already defined: \"a\"");
     }
 
     #[test]
     fn test_invalid_header() {
-        let expected_message = "<memory>:2: syntax error: closing bracket \"]\" does not end the \
-                                line: \"[key] = value\"";
-        let file = get_scenarios("[scenario]\n[key] = value");
-        assert_eq!(file.unwrap_err().to_string(), expected_message);
+        let err = get_scenarios("[scenario]\n[key] = value").unwrap_err();
+        let mut err = err.cause();
+        assert_eq!(err.to_string(), "in <memory>:2");
+        err = err.cause().unwrap();
+        assert_eq!(
+            err.to_string(),
+            "closing bracket \"]\" does not end the line: \"[key] = value\""
+        );
     }
 
     #[test]
     fn test_invalid_variable_name() {
-        let expected_message = "<memory>:2: invalid variable name: \"ß\"";
         let file = get_scenarios("[scenario]\nß = ss").unwrap();
-        let scenarios = file.iter().collect::<Result<Vec<_>, _>>();
-        assert_eq!(scenarios.unwrap_err().to_string(), expected_message);
+        let err = file.iter().collect::<Result<Vec<_>, _>>().unwrap_err();
+        let mut err = err.cause();
+        assert_eq!(err.to_string(), "in <memory>:2");
+        err = err.cause().unwrap();
+        assert_eq!(err.to_string(), "invalid variable name: \"ß\"");
     }
 
     #[test]
     fn test_invalid_scenario_name() {
-        let expected_message = "<memory>:3: invalid scenario name: \"\"";
         let file = get_scenarios("[scenario]\na = b\n[]\n").unwrap();
-        let scenarios = file.iter().collect::<Result<Vec<_>, _>>();
-        assert_eq!(scenarios.unwrap_err().to_string(), expected_message);
+        let err = file.iter().collect::<Result<Vec<_>, _>>().unwrap_err();
+        let mut err = err.cause();
+        assert_eq!(err.to_string(), "in <memory>:3");
+        err = err.cause().unwrap();
+        assert_eq!(err.to_string(), "invalid scenario name: \"\"");
     }
 
     #[test]
     fn test_unexpected_vardef() {
-        let expected_message = "<memory>:6: variable definition before the first header: \"a\"";
         let file = r"
         # second line
         # third line
@@ -400,7 +406,13 @@ mod tests {
         a = b
         ";
         let file = get_scenarios(file).unwrap();
-        let scenarios = file.iter().collect::<Result<Vec<_>, _>>();
-        assert_eq!(scenarios.unwrap_err().to_string(), expected_message);
+        let err = file.iter().collect::<Result<Vec<_>, _>>().unwrap_err();
+        let mut err = err.cause();
+        assert_eq!(err.to_string(), "in <memory>:6");
+        err = err.cause().unwrap();
+        assert_eq!(
+            err.to_string(),
+            "variable definition before the first header: \"a\""
+        );
     }
 }

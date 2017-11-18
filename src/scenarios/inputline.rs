@@ -270,7 +270,7 @@ mod tests {
         assert_eq_header("[]", "");
         assert_eq!(
             err_string("[Bad header"),
-            "syntax error: no closing bracket \"]\" in header line: \"[Bad header\""
+            "no closing bracket \"]\" in header line: \"[Bad header\""
         );
     }
 
@@ -297,15 +297,15 @@ mod tests {
         assert_eq_vardef("var=", "var", "");
         assert_eq!(
             err_string("=#def"),
-            "syntax error: no variable name before \"=\" of a variable definition: \"=#def\""
+            "no variable name before \"=\" of a variable definition: \"=#def\""
         );
         assert_eq!(
             err_string("="),
-            "syntax error: no variable name before \"=\" of a variable definition: \"=\""
+            "no variable name before \"=\" of a variable definition: \"=\""
         );
         assert_eq!(
             err_string("var!"),
-            "syntax error: no equals sign \"=\" in variable definition: \"var!\""
+            "no equals sign \"=\" in variable definition: \"var!\""
         );
     }
 
