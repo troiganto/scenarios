@@ -79,9 +79,9 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
-    let scenario_files: Vec<ScenarioFile> = args.values_of("input")
+    let scenario_files: Vec<ScenarioFile> = args.values_of_os("input")
         .ok_or(NoScenarios)?
-        .map(|path| ScenarioFile::from_file_or_stdin(path, is_strict))
+        .map(|path| ScenarioFile::from_cl_arg(path, is_strict))
         .collect::<Result<_, _>>()
         .context("could not read file")?;
     let all_scenarios: Vec<Vec<Scenario>> = scenario_files
