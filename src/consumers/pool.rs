@@ -16,8 +16,10 @@
 use std::time;
 use std::thread;
 
+use failure::Error;
+
 use super::tokens::PoolToken;
-use super::children::{self, RunningChild, FinishedChild};
+use super::children::{RunningChild, FinishedChild};
 
 
 /// A pool of processes which can run concurrently.
@@ -74,9 +76,9 @@ impl ProcessPool {
     /// is completely empty.
     ///
     /// # Errors
-    /// If waiting on any child fails, this function returns
-    /// `Some((Err(_), token))`.
-    pub fn wait_reap(&mut self) -> Option<(children::Result<FinishedChild>, PoolToken)> {
+    /// If waiting on any child fails, this function returns the error
+    /// that occurred as well as the failed child's token.
+    pub fn wait_reap(&mut self) -> Option<(Result<FinishedChild, Error>, PoolToken)> {
         if self.is_empty() {
             return None;
         }
@@ -118,7 +120,7 @@ impl<'a> FinishedIter<'a> {
 }
 
 impl<'a> Iterator for FinishedIter<'a> {
-    type Item = (children::Result<FinishedChild>, PoolToken);
+    type Item = (Result<FinishedChild, Error>, PoolToken);
 
     fn next(&mut self) -> Option<Self::Item> {
         // Iterate until we've traversed the entire vector.

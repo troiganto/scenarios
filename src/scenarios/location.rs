@@ -13,7 +13,6 @@
 // permissions and limitations under the License.
 
 
-use std::borrow::Borrow;
 use std::fmt::{self, Display};
 
 
@@ -25,11 +24,9 @@ use std::fmt::{self, Display};
 ///
 /// The type parameter `S` serves to abstract over the name being given
 /// as a `&str` or a `String`. The methods `as_ref` and `to_owned` help
-/// to convert between these two cases. (Note that these are inherent
-/// methods. This type implements neither `AsRef` nor `Borrow` nor
-/// `ToOwned` beyond `std`'s blanket implementations.)
+/// to convert between these two cases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ErrorLocation<S> {
+pub struct ErrorLocation<S: AsRef<str>> {
     /// The file's name or path.
     ///
     /// If the buffer being read is not a regular file, but instead.
@@ -43,7 +40,7 @@ pub struct ErrorLocation<S> {
     pub lineno: usize,
 }
 
-impl<S> ErrorLocation<S> {
+impl<S: AsRef<str>> ErrorLocation<S> {
     /// Creates a new error location without line number information.
     pub fn new(filename: S) -> Self {
         Self { filename, lineno: 0 }
@@ -55,46 +52,33 @@ impl<S> ErrorLocation<S> {
     }
 
     /// Creates a new error location that borrows from `self`.
-    ///
-    /// Note that the signature differs from `Borrow::borrow()`. This
-    /// does not return a reference, but instead a value that contains
-    /// a reference.
-    pub fn borrow<Borrowed>(&self) -> ErrorLocation<&Borrowed>
-    where
-        S: Borrow<Borrowed>,
-        Borrowed: ?Sized,
-    {
+    pub fn as_ref(&self) -> ErrorLocation<&str> {
         ErrorLocation {
-            filename: self.filename.borrow(),
+            filename: self.filename.as_ref(),
             lineno: self.lineno,
         }
     }
-}
 
-impl<'a, S> ErrorLocation<&'a S>
-where
-    S: ToOwned + ?Sized,
-{
     /// Creates a new error location that owns its `filename` field.
     ///
     /// Note that this method differs from `ToOwned::to_owned()`. In
     /// particular, the return value does not implement
     /// `Borrow<ErrorLocation<&S>>`. The reason is that our `borrow()`
     /// method does not match the required signature.
-    pub fn to_owned(&self) -> ErrorLocation<S::Owned> {
+    pub fn to_owned(&self) -> ErrorLocation<String> {
         ErrorLocation {
-            filename: self.filename.to_owned(),
+            filename: self.filename.as_ref().to_owned(),
             lineno: self.lineno,
         }
     }
 }
 
-impl<S: Display> Display for ErrorLocation<S> {
+impl<S: AsRef<str>> Display for ErrorLocation<S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.lineno != 0 {
-            write!(f, "{}:{}", self.filename, self.lineno)
+            write!(f, "in {}:{}", self.filename.as_ref(), self.lineno)
         } else {
-            write!(f, "{}", self.filename)
+            write!(f, "file \"{}\"", self.filename.as_ref())
         }
     }
 }
@@ -107,64 +91,12 @@ mod tests {
     #[test]
     fn test_display() {
         let s = ErrorLocation::with_lineno("scenario.ini", 20).to_string();
-        assert_eq!(s, "scenario.ini:20");
+        assert_eq!(s, "in scenario.ini:20");
     }
 
     #[test]
     fn test_display_without_lineno() {
         let s = ErrorLocation::new("scenario.ini").to_string();
-        assert_eq!(s, "scenario.ini");
-    }
-
-    #[test]
-    fn test_owned_to_borrowed() {
-        let owned = ErrorLocation::new(String::from("-"));
-        let _: ErrorLocation<&str> = owned.borrow();
-        let _: ErrorLocation<String> = owned;
-    }
-
-    #[test]
-    fn test_borrowed_to_owned() {
-        let borrowed = ErrorLocation::new("-");
-        let _: ErrorLocation<String> = borrowed.to_owned();
-        let _: ErrorLocation<&str> = borrowed;
-    }
-
-    #[test]
-    fn test_borrowed_to_borrowed() {
-        let borrowed = ErrorLocation::new("-");
-        let _: ErrorLocation<&str> = borrowed.borrow();
-        let _: ErrorLocation<&str> = borrowed;
-    }
-
-    #[test]
-    fn test_owned_to_owned() {
-        let owned = ErrorLocation::new(String::from("-"));
-        let _: ErrorLocation<String> = owned.to_owned();
-        let _: ErrorLocation<String> = owned;
-    }
-
-    #[test]
-    fn test_copy_semantics() {
-        let original = ErrorLocation::new("-");
-        let copy = original;
-        let _ = original;
-        let _ = copy;
-    }
-
-    #[test]
-    fn test_ord() {
-        let expected = vec![
-            ErrorLocation::with_lineno("a.ini", 9),
-            ErrorLocation::with_lineno("a.ini", 12),
-            ErrorLocation::with_lineno("b.ini", 1),
-        ];
-        let mut actual = vec![
-            ErrorLocation::with_lineno("b.ini", 1),
-            ErrorLocation::with_lineno("a.ini", 12),
-            ErrorLocation::with_lineno("a.ini", 9),
-        ];
-        actual.sort_unstable();
-        assert_eq!(expected, actual);
+        assert_eq!(s, "file \"scenario.ini\"");
     }
 }

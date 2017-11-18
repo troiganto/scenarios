@@ -13,17 +13,10 @@
 // permissions and limitations under the License.
 
 
-use std::error::Error;
 use std::iter::FromIterator;
 use std::fmt::{self, Display};
 use std::borrow::{Borrow, Cow};
 use std::collections::hash_map::{self, HashMap};
-
-use quick_error::ResultExt;
-
-
-/// Convenience alias for `std::result::Result`.
-pub type Result<T> = ::std::result::Result<T, ScenarioError>;
 
 
 /// Named set of environment variable definitions.
@@ -47,7 +40,7 @@ impl<'a> Scenario<'a> {
     /// # Errors
     /// This call fails with `ParseError::InvalidName` if `name`
     /// is the empty string or contains a null byte.
-    pub fn new<S: Into<Cow<'a, str>>>(name: S) -> Result<Self> {
+    pub fn new<S: Into<Cow<'a, str>>>(name: S) -> Result<Self, ScenarioError> {
         let name = name.into();
         if name.is_empty() || name.contains('\0') {
             Err(ScenarioError::InvalidName(name.into_owned()))
@@ -64,7 +57,7 @@ impl<'a> Scenario<'a> {
     /// is not a valid variable name (`[A-Za-z_][A-Za-z0-9_]+`). It
     /// fails with `ScenarioError::DuplicateVariable` if a variable of
     /// this name already has been added to the scenario.
-    pub fn add_variable(&mut self, name: &'a str, value: &'a str) -> Result<()> {
+    pub fn add_variable(&mut self, name: &'a str, value: &'a str) -> Result<(), ScenarioError> {
         if self.has_variable(name) {
             Err(ScenarioError::DuplicateVariable(name.to_owned()))
         } else if !is_c_identifier(name) {
@@ -115,14 +108,13 @@ impl<'a> Scenario<'a> {
     /// See `Scenario::merge` for more information.
     ///
     /// # Errors
-    /// The merge can fail for two reasons:
-    /// 1. The iterator `scenarios` was empty – in that case, the
-    ///    error `ScenarioError::NoScenarios` is returned.
-    /// 2. Strict mode was enabled and two scenarios defined the same
-    ///    variable – in that case, the error
-    ///    `ScenarioError::StrictMergeFailed` is returned and contains
-    ///    the names of the offending scenarios and variable.
-    pub fn merge_all<I>(scenarios: I, options: MergeOptions) -> Result<Self>
+    /// The merge can fail if strict mode was enabled and two scenarios
+    /// define the same variable.
+    ///
+    /// # Panics
+    /// This function panics if `scenarios` turns into an empty
+    /// iterator.
+    pub fn merge_all<I>(scenarios: I, opts: MergeOptions) -> Result<Self, MergeError>
     where
         I: IntoIterator,
         I::IntoIter: Clone,
@@ -132,13 +124,13 @@ impl<'a> Scenario<'a> {
         let backup_iter = scenarios.clone();
         let mut accumulator = scenarios
             .next()
-            .ok_or(ScenarioError::NoScenarios)?
+            .expect("no scenarios to merge")
             .borrow()
             .clone();
         // Go over each scenario `s` and merge it into `accumulator`. Abort on
         // the first error. (`Nothing` is a `()` that allows `collect`ing.)
-        let result: Result<Nothing> = scenarios
-            .map(|s| accumulator.merge(s.borrow(), options))
+        let result: Result<Nothing, MergeError> = scenarios
+            .map(|s| accumulator.merge(s.borrow(), opts))
             .collect();
         match result {
             Ok(Nothing) => Ok(accumulator),
@@ -146,10 +138,7 @@ impl<'a> Scenario<'a> {
                 // If a `StrictMergeFailed` error occurs, the `left` scenario is a
                 // merged intermediary. This is useless! Change it to the correct
                 // scenario name by searching through `scenarios` once more.
-                if let Some(info) = err.strict_merge_failed_info_mut() {
-                    info.left = name_of_first_scenario_with_variable(backup_iter, &info.varname)
-                        .unwrap();
-                }
+                err.left = name_of_first_scenario_with_variable(backup_iter, &err.varname).unwrap();
                 Err(err)
             },
         }
@@ -158,24 +147,24 @@ impl<'a> Scenario<'a> {
     /// Merges another scenario into this one.
     ///
     /// This combines the names and variables of both scenarios. The
-    /// names get combined with `options.delimiter` between them.
+    /// names get combined with `opts.delimiter` between them.
     /// Variables are combined by adding the `other` `HashMap` into
     /// `self`'s. If both scenarios define the same variable and
-    /// `options.strict` is `false`, the value of `other`'s takes
+    /// `opts.strict` is `false`, the value of `other`'s takes
     /// precedence.
     ///
     /// #Errors
-    /// If `options.strict` is `true` and both scenarios define the
-    /// same variable, `ScenarioError::StrictMergeFailed` is returned.
-    pub fn merge(&mut self, other: &Scenario<'a>, options: MergeOptions) -> Result<()> {
+    /// If `ops.strict` is `true` and both scenarios define the same
+    /// variable, `MergeError` is returned.
+    pub fn merge(&mut self, other: &Scenario<'a>, opts: MergeOptions) -> Result<(), MergeError> {
         // Turn (&&str, &&str) iterator into (&str, &str) iterator.
         let other_vars = other.variables().map(|(&k, &v)| (k, v));
         // Merge variable definitions first, then the scenario names. If we
         // merged names before the variables, the error message would contain
         // the already-merged name.
-        self.merge_vars(other_vars, options.is_strict)
-            .context((self.name(), other.name()))?;
-        self.merge_name(options.delimiter, &other.name);
+        self.merge_vars(other_vars, opts.is_strict)
+            .map_err(|var| MergeError::new(var, self.name(), other.name()))?;
+        self.merge_name(opts.delimiter, &other.name);
         Ok(())
     }
 
@@ -244,19 +233,12 @@ impl<'a> Default for MergeOptions<'a> {
 }
 
 
-/// Opaque elper type for `ScenarioError::StrictMergeFailed`.
-#[derive(Debug)]
-pub struct StrictMergeFailed {
-    varname: String,
-    left: String,
-    right: String,
-}
-
-
 /// A zero-sized type that implements `FromIterator`.
 ///
 /// This allows us to call `Iterator::collect<Result<_>>` without
 /// creating a vector when item type of the iterator is `()`.
+///
+/// TODO: Wait for `impl FromIterator<()> for ()` to be stabilized.
 struct Nothing;
 
 impl FromIterator<()> for Nothing {
@@ -309,56 +291,39 @@ where
 }
 
 
-quick_error! {
-    /// Errors caused during building a scenario.
-    #[derive(Debug)]
-    pub enum ScenarioError {
-        InvalidName(name: String) {
-            description("invalid scenario name")
-            display(err) -> ("{}: \"{}\"", err.description(), name)
-        }
-        InvalidVariable(name: String) {
-            description("invalid variable name")
-            display(err) -> ("{}: \"{}\"", err.description(), name)
-        }
-        DuplicateVariable(name: String) {
-            description("variable already defined")
-            display(err) -> ("{}: \"{}\"", err.description(), name)
-        }
-        NoScenarios {
-            description("scenario merge: no scenarios provided")
-        }
-        StrictMergeFailed(err: StrictMergeFailed) {
-            description("conflicting variable definitions")
-            display("variable \"{}\" defined both in scenario \"{}\" and in scenario \"{}\"",
-                    err.varname, err.left, err.right)
-            context(left_right: (&'a str, &'a str), v: String) -> (
-                StrictMergeFailed {
-                    varname: v,
-                    left: left_right.0.to_owned(),
-                    right: left_right.1.to_owned(),
-                }
-            )
-        }
-    }
+/// Errors caused during building a scenario.
+#[derive(Debug, Fail)]
+pub enum ScenarioError {
+    #[fail(display = "invalid scenario name: \"{}\"", _0)]
+    InvalidName(String),
+    #[fail(display = "invalid variable name: \"{}\"", _0)]
+    InvalidVariable(String),
+    #[fail(display = "variable already defined: \"{}\"", _0)]
+    DuplicateVariable(String),
 }
 
 
-/// Private helper functions around `ScenarioError`.
-impl ScenarioError {
-    /// If the error is `StrictMergeFailed`, returns its data.
-    fn strict_merge_failed_info(&self) -> Option<&StrictMergeFailed> {
-        match *self {
-            ScenarioError::StrictMergeFailed(ref err) => Some(err),
-            _ => None,
-        }
-    }
+/// Errors caused by conflicting variables during merging of scenarios.
+#[derive(Debug, Fail)]
+#[fail(display = "variable \"{}\" defined both in scenario \"{}\" and in scenario \"{}\"",
+       varname, left, right)]
+pub struct MergeError {
+    varname: String,
+    left: String,
+    right: String,
+}
 
-    /// If the error is `StrictMergeFailed`, returns its data.
-    fn strict_merge_failed_info_mut(&mut self) -> Option<&mut StrictMergeFailed> {
-        match *self {
-            ScenarioError::StrictMergeFailed(ref mut err) => Some(err),
-            _ => None,
+impl MergeError {
+    fn new<V, L, R>(varname: V, left: L, right: R) -> Self
+    where
+        V: Into<String>,
+        L: Into<String>,
+        R: Into<String>,
+    {
+        MergeError {
+            varname: varname.into(),
+            left: left.into(),
+            right: right.into(),
         }
     }
 }
@@ -422,11 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_none() {
-        match Scenario::merge_all(&[], MergeOptions::default()).unwrap_err() {
-            ScenarioError::NoScenarios => {},
-            err => panic!("wrong error: {}", err),
-        }
+    #[should_panic]
+    fn test_merge_none_panics() {
+        let _ = Scenario::merge_all(&[], MergeOptions::default());
     }
 
     #[test]

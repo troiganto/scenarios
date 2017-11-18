@@ -14,7 +14,6 @@
 
 
 use std::str::FromStr;
-use std::error::Error;
 
 
 /// Type that defines how each line of an input file is interpreted.
@@ -195,7 +194,7 @@ fn try_parse_header(s: &str) -> Option<Result<&str, SyntaxError>> {
     }
     if !s.ends_with(']') {
         let err = if s.find(']').is_none() {
-            SyntaxError::NoClosingBracket(s.to_owned())
+            SyntaxError::MissingClosingBracket(s.to_owned())
         } else {
             SyntaxError::TextAfterClosingBracket(s.to_owned())
         };
@@ -217,34 +216,24 @@ fn try_parse_header(s: &str) -> Option<Result<&str, SyntaxError>> {
 fn try_parse_definition(s: &str) -> Option<Result<usize, SyntaxError>> {
     match s.find('=') {
         Some(pos) if pos > 0 => Some(Ok(pos)),
-        Some(_) => Some(Err(SyntaxError::NoTextBeforeEqualsSign(s.to_owned()))),
+        Some(_) => Some(Err(SyntaxError::MissingVariableName(s.to_owned()))),
         None => None,
     }
 }
 
 
-quick_error! {
-    /// Error caused by a line not adhering to the syntax described in
-    /// the documentation for `InputLine`.
-    #[derive(Debug)]
-    pub enum SyntaxError {
-        NoClosingBracket(line: String) {
-            description("syntax error: no closing bracket \"]\" in header line")
-            display(err) -> ("{}: \"{}\"", err.description(), line)
-        }
-        TextAfterClosingBracket(line: String) {
-            description("syntax error: closing bracket \"]\" does not end the line")
-            display(err) -> ("{}: \"{}\"", err.description(), line)
-        }
-        NoTextBeforeEqualsSign(line: String) {
-            description("syntax error: no variable name before \"=\" of a variable definition")
-            display(err) -> ("{}: \"{}\"", err.description(), line)
-        }
-        NotAVarDef(line: String) {
-            description("syntax error: no equals sign \"=\" in variable definition")
-            display(err) -> ("{}: \"{}\"", err.description(), line)
-        }
-    }
+/// Error caused by a line not adhering to the syntax described in
+/// the documentation for `InputLine`.
+#[derive(Debug, Fail)]
+pub enum SyntaxError {
+    #[fail(display = "no closing bracket \"]\" in header line: \"{}\"", _0)]
+    MissingClosingBracket(String),
+    #[fail(display = "closing bracket \"]\" does not end the line: \"{}\"", _0)]
+    TextAfterClosingBracket(String),
+    #[fail(display = "no variable name before \"=\" of a variable definition: \"{}\"", _0)]
+    MissingVariableName(String),
+    #[fail(display = "no equals sign \"=\" in variable definition: \"{}\"", _0)]
+    NotAVarDef(String),
 }
 
 
@@ -281,7 +270,7 @@ mod tests {
         assert_eq_header("[]", "");
         assert_eq!(
             err_string("[Bad header"),
-            "syntax error: no closing bracket \"]\" in header line: \"[Bad header\""
+            "no closing bracket \"]\" in header line: \"[Bad header\""
         );
     }
 
@@ -308,15 +297,15 @@ mod tests {
         assert_eq_vardef("var=", "var", "");
         assert_eq!(
             err_string("=#def"),
-            "syntax error: no variable name before \"=\" of a variable definition: \"=#def\""
+            "no variable name before \"=\" of a variable definition: \"=#def\""
         );
         assert_eq!(
             err_string("="),
-            "syntax error: no variable name before \"=\" of a variable definition: \"=\""
+            "no variable name before \"=\" of a variable definition: \"=\""
         );
         assert_eq!(
             err_string("var!"),
-            "syntax error: no equals sign \"=\" in variable definition: \"var!\""
+            "no equals sign \"=\" in variable definition: \"var!\""
         );
     }
 

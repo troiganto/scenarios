@@ -18,8 +18,9 @@
 #[macro_use]
 extern crate clap;
 extern crate num_cpus;
+extern crate failure;
 #[macro_use]
-extern crate quick_error;
+extern crate failure_derive;
 
 mod app;
 mod logger;
@@ -28,7 +29,9 @@ mod cartesian;
 mod consumers;
 
 
-use scenarios::{Scenario, ScenarioFile};
+use failure::{ResultExt, Error};
+
+use scenarios::{MergeError, Scenario, ScenarioFile};
 use consumers::{PreparedChild, FinishedChild};
 
 
@@ -51,7 +54,13 @@ fn main() {
         // Delegate to `try_main`. Catch any error, print it to stderr, and
         // exit with code 1.
         else if let Err(err) = try_main(&args) {
-            logger::Logger::new(args.is_present("quiet")).log(err);
+            // We want `SomeScenariosFailed` to be printed as a regular info,
+            // but all other errors with the full chain.
+            let logger = logger::Logger::new(args.is_present("quiet"));
+            match err.downcast::<SomeScenariosFailed>() {
+                Ok(err) => logger.log(err),
+                Err(err) => logger.log_error_chain(err),
+            }
             1
         } else {
             // `try_main()` returned Ok(()).
@@ -71,28 +80,29 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
     let scenario_files: Vec<ScenarioFile> = args.values_of("input")
-        .ok_or(Error::NoScenarios)?
+        .ok_or(NoScenarios)?
         .map(|path| ScenarioFile::from_file_or_stdin(path, is_strict))
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<_, _>>()
+        .context("could not read file")?;
     let all_scenarios: Vec<Vec<Scenario>> = scenario_files
         .iter()
         .map(|f| f.iter().collect::<Result<_, _>>())
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<_, _>>()
+        .context("could not build scenarios")?;
 
     // Go through all possible combinations of scenarios and a merged
     // scenario for each of them. Hand these merged scenarios then over
     // to the correct handler.
-    let merge_options = scenarios::MergeOptions {
+    let merge_opts = scenarios::MergeOptions {
         delimiter: args.value_of("delimiter").expect("default value"),
         is_strict: is_strict,
     };
-    let combined_scenarios =
-        cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_options));
+    let combos = cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_opts));
     if args.is_present("command_line") {
         let handler = CommandLineHandler::new(&args);
-        consumers::loop_in_process_pool(combined_scenarios, handler)?;
+        consumers::loop_in_process_pool(combos, handler)?;
     } else {
-        handle_printing(&args, combined_scenarios)?;
+        handle_printing(&args, combos)?;
     }
     Ok(())
 }
@@ -105,7 +115,7 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 /// enabled.
 fn handle_printing<'s, I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
 where
-    I: Iterator<Item = scenarios::Result<Scenario<'s>>>,
+    I: Iterator<Item = Result<Scenario<'s>, MergeError>>,
 {
     let mut printer = consumers::Printer::default();
     if args.is_present("print0") {
@@ -131,7 +141,10 @@ struct CommandLineHandler<'a> {
     command_line: consumers::CommandLine<&'a str>,
     /// A logger that helps us print information to the user.
     logger: logger::Logger<'static>,
+    /// A flag that is set if any error occurs during processing.
     ///
+    /// This is used so we can tell the user something went wrong even
+    /// if `keep_going` has been set.
     any_errors: bool,
 }
 
@@ -179,27 +192,24 @@ impl<'a> CommandLineHandler<'a> {
     }
 }
 
-impl<'a, 's> consumers::LoopDriver<scenarios::Result<Scenario<'s>>> for CommandLineHandler<'a> {
-    type Error = Error;
-
+impl<'a, 's> consumers::LoopDriver<Result<Scenario<'s>, MergeError>> for CommandLineHandler<'a> {
     fn max_num_of_children(&self) -> usize {
         self.max_num_of_children
     }
 
-    fn prepare_child(&self, s: scenarios::Result<Scenario<'s>>) -> Result<PreparedChild, Error> {
+    fn prepare_child(&self, s: Result<Scenario<'s>, MergeError>) -> Result<PreparedChild, Error> {
         let child = self.command_line.with_scenario(s?)?;
         Ok(child)
     }
 
-    fn on_reap(&mut self, child: FinishedChild) -> Result<(), Self::Error> {
+    fn on_reap(&mut self, child: FinishedChild) -> Result<(), Error> {
         let result = child.into_result();
         if self.keep_going {
             if let Err(err) = result {
-                // Don't convert error to `Self::Error` -- that would add the
-                // word "error:" to the log string. But we don't want that
-                // because we keep running.
+                // TODO: Avoid logging the word "error" here, because
+                // this event does not stop us from running.
                 self.any_errors = true;
-                self.logger.log(err)
+                self.logger.log_error_chain(err)
             }
             Ok(())
         } else {
@@ -207,65 +217,36 @@ impl<'a, 's> consumers::LoopDriver<scenarios::Result<Scenario<'s>>> for CommandL
         }
     }
 
-    fn on_loop_failed(&mut self, error: Self::Error) {
+    fn on_loop_failed(&mut self, error: Error) {
         self.any_errors = true;
-        self.logger.log(error);
+        self.logger.log_error_chain(error);
         if self.max_num_of_children > 1 {
             self.logger.log("waiting for unfinished jobs ...");
         }
     }
 
-    fn on_cleanup_reap(&mut self, child: Result<FinishedChild, consumers::ChildError>) {
+    fn on_cleanup_reap(&mut self, child: Result<FinishedChild, Error>) {
         if let Err(err) = child.and_then(FinishedChild::into_result) {
-            // Don't convert error to `Self::Error` -- that would add the word
-            // "error:" to the log string. But we don't want that because we
-            // keep running.
-            self.logger.log(err);
+            // TODO: Avoid logging the word "error" here, because this
+            // event does not stop us from running.
+            self.logger.log_error_chain(err);
         }
     }
 
-    fn on_finish(self) -> Result<(), Self::Error> {
+    fn on_finish(self) -> Result<(), Error> {
         if !self.any_errors {
             Ok(())
         } else {
-            Err(Error::NotAllFinished)
+            Err(Error::from(SomeScenariosFailed))
         }
     }
 }
 
 
-quick_error! {
-    #[derive(Debug)]
-    enum Error {
-        ParseError(err: scenarios::ParseError) {
-            description(err.description())
-            display("error: {}", err)
-            cause(err)
-            from()
-        }
-        ScenarioError(err: scenarios::ScenarioError) {
-            description(err.description())
-            display("error: {}", err)
-            cause(err)
-            from()
-        }
-        VariableNameError(err: consumers::VariableNameError) {
-            description(err.description())
-            display("error: {}", err)
-            cause(err)
-            from()
-        }
-        ChildError(err: consumers::ChildError) {
-            description(err.description())
-            display("error: {}", err)
-            cause(err)
-            from()
-        }
-        NotAllFinished {
-            description("not all scenarios terminated successfully")
-        }
-        NoScenarios {
-            description("error: no scenarios provided")
-        }
-    }
-}
+#[derive(Debug, Fail)]
+#[fail(display = "not all scenarios terminated successfully")]
+pub struct SomeScenariosFailed;
+
+#[derive(Debug, Fail)]
+#[fail(display = "no scenarios provided")]
+pub struct NoScenarios;
