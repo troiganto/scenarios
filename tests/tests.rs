@@ -242,9 +242,9 @@ mod errors {
         runner.scenario_file("broken.ini");
         let expected = format!(
             r#"scenarios: error: could not read file
-scenarios: -> reason: in {0}:1
-scenarios: -> reason: in {0}:17
-scenarios: -> reason: duplicate scenario name: "Scenario 1"
+scenarios:   -> reason: in {0}:1
+scenarios:   -> reason: in {0}:17
+scenarios:   -> reason: duplicate scenario name: "Scenario 1"
 "#,
             runner.get_scenario_file_path("broken.ini").display()
         );
@@ -258,9 +258,9 @@ scenarios: -> reason: duplicate scenario name: "Scenario 1"
     #[test]
     fn test_broken_command() {
         let expected = r#"scenarios: error: could not start scenario "A1"
-scenarios: -> reason: could not execute command "not a command"
-scenarios: -> reason: No such file or directory (os error 2)
-scenarios: error: not all scenarios terminated successfully
+scenarios:   -> reason: could not execute command "not a command"
+scenarios:   -> reason: No such file or directory (os error 2)
+scenarios: not all scenarios terminated successfully
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
@@ -275,10 +275,10 @@ scenarios: error: not all scenarios terminated successfully
     #[test]
     fn test_broken_command_parallel() {
         let expected = r#"scenarios: error: could not start scenario "A1"
-scenarios: -> reason: could not execute command "not a command"
-scenarios: -> reason: No such file or directory (os error 2)
+scenarios:   -> reason: could not execute command "not a command"
+scenarios:   -> reason: No such file or directory (os error 2)
 scenarios: waiting for unfinished jobs ...
-scenarios: error: not all scenarios terminated successfully
+scenarios: not all scenarios terminated successfully
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
@@ -292,8 +292,8 @@ scenarios: error: not all scenarios terminated successfully
     #[test]
     fn test_stop_at_first_error() {
         let expected_stderr = r#"scenarios: error: scenario did not finish successfully: "3"
-scenarios: -> reason: job exited with non-zero exit code: 1
-scenarios: error: not all scenarios terminated successfully
+scenarios:   -> reason: job exited with non-zero exit code: 1
+scenarios: not all scenarios terminated successfully
 "#;
         let expected_stdout = "1\n2\n";
         let output = stop_at_scenario("3", &[]).output();
@@ -306,9 +306,9 @@ scenarios: error: not all scenarios terminated successfully
     #[test]
     fn test_stop_at_first_error_parallel() {
         let expected_stderr = r#"scenarios: error: scenario did not finish successfully: "1"
-scenarios: -> reason: job exited with non-zero exit code: 1
+scenarios:   -> reason: job exited with non-zero exit code: 1
 scenarios: waiting for unfinished jobs ...
-scenarios: error: not all scenarios terminated successfully
+scenarios: not all scenarios terminated successfully
 "#;
         let expected_stdout = "2\n3\n";
         let output = stop_at_scenario("1", &["--jobs=3"]).output();
@@ -321,11 +321,11 @@ scenarios: error: not all scenarios terminated successfully
     #[test]
     fn test_finish_what_is_started() {
         let expected_stderr = r#"scenarios: error: scenario did not finish successfully: "1"
-scenarios: -> reason: job exited with non-zero exit code: 1
+scenarios:   -> reason: job exited with non-zero exit code: 1
 scenarios: waiting for unfinished jobs ...
 scenarios: error: scenario did not finish successfully: "2"
-scenarios: -> reason: job exited with non-zero exit code: 1
-scenarios: error: not all scenarios terminated successfully
+scenarios:   -> reason: job exited with non-zero exit code: 1
+scenarios: not all scenarios terminated successfully
 "#;
         let expected_stdout = "";
         let output = Runner::new()
@@ -341,8 +341,8 @@ scenarios: error: not all scenarios terminated successfully
     #[test]
     fn test_keep_going() {
         let expected_stderr = r#"scenarios: error: scenario did not finish successfully: "1"
-scenarios: -> reason: job exited with non-zero exit code: 1
-scenarios: error: not all scenarios terminated successfully
+scenarios:   -> reason: job exited with non-zero exit code: 1
+scenarios: not all scenarios terminated successfully
 "#;
         let expected_stdout = "2\n3\n4\n5\n";
         let output = stop_at_scenario("1", &["--keep-going"]).output();
@@ -355,8 +355,8 @@ scenarios: error: not all scenarios terminated successfully
     #[test]
     fn test_keep_going_parallel() {
         let expected_stderr = r#"scenarios: error: scenario did not finish successfully: "1"
-scenarios: -> reason: job exited with non-zero exit code: 1
-scenarios: error: not all scenarios terminated successfully
+scenarios:   -> reason: job exited with non-zero exit code: 1
+scenarios: not all scenarios terminated successfully
 "#;
         let expected_stdout = "2\n3\n4\n5\n";
         let output = stop_at_scenario("1", &["--keep-going", "--jobs=3"]).output();

@@ -54,7 +54,13 @@ fn main() {
         // Delegate to `try_main`. Catch any error, print it to stderr, and
         // exit with code 1.
         else if let Err(err) = try_main(&args) {
-            logger::Logger::new(args.is_present("quiet")).log_error_chain(err);
+            // We want `SomeScenariosFailed` to be printed as a regular info,
+            // but all other errors with the full chain.
+            let logger = logger::Logger::new(args.is_present("quiet"));
+            match err.downcast::<SomeScenariosFailed>() {
+                Ok(err) => logger.log(err),
+                Err(err) => logger.log_error_chain(err),
+            }
             1
         } else {
             // `try_main()` returned Ok(()).

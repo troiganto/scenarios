@@ -91,7 +91,7 @@ impl<'a> Logger<'a> {
                 let mut error = error.cause();
                 writeln!(lock, "{}: error: {}", self.name, error).unwrap();
                 while let Some(cause) = error.cause() {
-                    writeln!(lock, "{}: -> reason: {}", self.name, cause).unwrap();
+                    writeln!(lock, "{}:   -> reason: {}", self.name, cause).unwrap();
                     error = cause;
                 }
             },
