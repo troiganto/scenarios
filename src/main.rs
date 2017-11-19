@@ -84,7 +84,7 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     let delimiter = args.value_of_os("delimiter")
         .expect("default value")
         .try_to_str()
-        .context("invalid --delimiter")?;
+        .context("invalid value for --delimiter")?;
     let scenario_files: Vec<ScenarioFile> = args.values_of_os("input")
         .ok_or(NoScenarios)?
         .map(|path| ScenarioFile::from_cl_arg(path, is_strict))
@@ -102,7 +102,7 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     let merge_opts = scenarios::MergeOptions { delimiter, is_strict };
     let combos = cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_opts));
     if args.is_present("command_line") {
-        let handler = CommandLineHandler::new(&args);
+        let handler = CommandLineHandler::new(&args)?;
         consumers::loop_in_process_pool(combos, handler)?;
     } else {
         handle_printing(&args, combos)?;
@@ -156,14 +156,17 @@ impl<'a> CommandLineHandler<'a> {
     ///
     /// This reads the parsed command-line arguments and initializes
     /// the fields of this struct from them.
-    pub fn new(args: &'a clap::ArgMatches) -> Self {
-        CommandLineHandler {
+    pub fn new(args: &'a clap::ArgMatches) -> Result<Self, Error> {
+        let max_num_of_children = Self::max_num_tokens_from_args(args)
+            .context("invalid value for --jobs")?;
+        let handler = CommandLineHandler {
+            any_errors: false,
+            max_num_of_children,
             keep_going: args.is_present("keep_going"),
-            max_num_of_children: Self::max_num_tokens_from_args(args),
             command_line: Self::command_line_from_args(args),
             logger: logger::Logger::new(args.is_present("quiet")),
-            any_errors: false,
-        }
+        };
+        Ok(handler)
     }
 
     /// Creates a `CommandLine` from `args`.
@@ -184,14 +187,17 @@ impl<'a> CommandLineHandler<'a> {
     }
 
     /// Parses and interprets the `--jobs` option.
-    fn max_num_tokens_from_args(args: &clap::ArgMatches) -> usize {
+    fn max_num_tokens_from_args(args: &clap::ArgMatches) -> Result<usize, Error> {
         if !args.is_present("jobs") {
-            return 1;
+            return Ok(1);
         }
-        // We can unwrap the `parse()` result because clap validates --jobs.
-        args.value_of("jobs")
-            .map(|s| s.parse().unwrap())
-            .unwrap_or_else(num_cpus::get)
+        let num = match args.value_of_os("jobs") {
+            Some(num) => num,
+            None => return Ok(num_cpus::get()),
+        };
+        let num = num.try_to_str()?;
+        let num = num.parse()?;
+        Ok(num)
     }
 }
 

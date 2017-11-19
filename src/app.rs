@@ -160,7 +160,6 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .value_name("N")
              .min_values(0)
              .max_values(1)
-             .validator(|s| if s.parse::<usize>().is_ok() { Ok(()) } else { Err(s) })
             .help("The number of COMMANDs to execute in parallel.")
             .long_help("The number of COMMANDs to execute in parallel. \
                        If no number is passed, the detected number of \
