@@ -24,15 +24,17 @@ extern crate failure_derive;
 
 mod app;
 mod logger;
-mod scenarios;
+mod trytostr;
 mod cartesian;
 mod consumers;
+mod scenarios;
 
 
 use failure::{ResultExt, Error};
 
-use scenarios::{MergeError, Scenario, ScenarioFile};
+use trytostr::OsStrExt;
 use consumers::{PreparedChild, FinishedChild};
+use scenarios::{MergeError, Scenario, ScenarioFile};
 
 
 /// The entry point and wrapper around `try_main`.
@@ -79,6 +81,10 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
+    let delimiter = args.value_of_os("delimiter")
+        .expect("default value")
+        .try_to_str()
+        .context("invalid --delimiter")?;
     let scenario_files: Vec<ScenarioFile> = args.values_of_os("input")
         .ok_or(NoScenarios)?
         .map(|path| ScenarioFile::from_cl_arg(path, is_strict))
@@ -93,10 +99,7 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Go through all possible combinations of scenarios and a merged
     // scenario for each of them. Hand these merged scenarios then over
     // to the correct handler.
-    let merge_opts = scenarios::MergeOptions {
-        delimiter: args.value_of("delimiter").expect("default value"),
-        is_strict: is_strict,
-    };
+    let merge_opts = scenarios::MergeOptions { delimiter, is_strict };
     let combos = cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_opts));
     if args.is_present("command_line") {
         let handler = CommandLineHandler::new(&args);
@@ -246,6 +249,7 @@ impl<'a, 's> consumers::LoopDriver<Result<Scenario<'s>, MergeError>> for Command
 #[derive(Debug, Fail)]
 #[fail(display = "not all scenarios terminated successfully")]
 pub struct SomeScenariosFailed;
+
 
 #[derive(Debug, Fail)]
 #[fail(display = "no scenarios provided")]
