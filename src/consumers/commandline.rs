@@ -19,6 +19,7 @@ use std::process::Command;
 use failure::{Error, ResultExt};
 
 use scenarios::Scenario;
+use trytostr::OsStrExt;
 
 use super::Printer;
 use super::children::{PreparedChild, ScenarioNotStarted};
@@ -99,14 +100,14 @@ impl Default for Options {
 /// `CommandLine` is created from an iterator over any `S` that can
 /// give references to `str`. It puts these objects into its own
 /// backing buffer of type `Vec<S>`.
-pub struct CommandLine<S: AsRef<str>> {
+pub struct CommandLine<S: AsRef<OsStr>> {
     /// The command line containing the program and its arguments.
     command_line: Vec<S>,
     /// Flags to customize the creation of child processes.
     options: Options,
 }
 
-impl<S: AsRef<str>> CommandLine<S> {
+impl<S: AsRef<OsStr>> CommandLine<S> {
     /// Creates a new instance wrapping a command line.
     ///
     /// The iterator should yield the name of the program to execute as
@@ -193,30 +194,22 @@ impl<S: AsRef<str>> CommandLine<S> {
     pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild, Error> {
         let (name, variables) = scenario.into_parts();
         let command = self.create_command(variables, &name)?;
-        let program = self.program().as_ref().to_owned();
+        let program = self.program().as_ref().as_ref();
         Ok(PreparedChild::new(name.into_owned(), program, command))
     }
 
-    /// Like `with_scenario`, but does not consume the `Scenario`.
-    pub fn with_scenario_ref(&self, scenario: &Scenario) -> Result<PreparedChild, Error> {
-        let name = scenario.name().to_owned();
-        let program = self.program().as_ref().to_owned();
-        let command = self.create_command(scenario.variables(), &name)?;
-        Ok(PreparedChild::new(name, program, command))
-    }
-
     /// Internal implementation of `with_scenario`.
-    fn create_command<I, K, V, N>(&self, env_vars: I, name: N) -> Result<Command, Error>
+    fn create_command<I, K, V>(&self, env_vars: I, name: &str) -> Result<Command, Error>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
-        N: AsRef<str>,
     {
         let mut cmd = Command::new(self.program().as_ref());
         // Go through each of the options and prepare `cmd` accordingly.
         if self.options.insert_name_in_args {
-            self.add_args_formatted(&mut cmd, name.as_ref());
+            self.add_args_formatted(&mut cmd, name)
+                .context("could not replace \"{}\" with scenario name in an argument")?;
         } else {
             cmd.args(self.args().iter().map(AsRef::as_ref));
         }
@@ -226,25 +219,26 @@ impl<S: AsRef<str>> CommandLine<S> {
         if self.options.add_scenarios_name && self.options.is_strict {
             Self::add_vars_checked(&mut cmd, env_vars)
                 .map_err(ReservedVarName)
-                .with_context(|_| ScenarioNotStarted(name.as_ref().to_owned()))?;
+                .with_context(|_| ScenarioNotStarted(name.to_owned()))?;
         } else {
             cmd.envs(env_vars);
         }
         if self.options.add_scenarios_name {
-            cmd.env(SCENARIOS_NAME_NAME, name.as_ref());
+            cmd.env(SCENARIOS_NAME_NAME, OsStr::new(name));
         }
         Ok(cmd)
     }
 
     /// Inserts `name` into `self.args()` before adding them to `cmd`.
-    fn add_args_formatted<N: AsRef<str>>(&self, cmd: &mut Command, name: N) {
+    fn add_args_formatted(&self, cmd: &mut Command, name: &str) -> Result<(), Error> {
         // We treat each argument as a template in which `name` is
         // inserted before being added to `cmd`.
         let mut printer = Printer::new_null();
         for arg in self.args().iter() {
-            printer.set_template(arg.as_ref());
-            cmd.arg(printer.format(name.as_ref()));
+            printer.set_template(arg.as_ref().try_to_str()?);
+            cmd.arg(printer.format(name));
         }
+        Ok(())
     }
 
     /// Checks the name of each variable before adding it to `cmd`.

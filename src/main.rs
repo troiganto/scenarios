@@ -30,6 +30,8 @@ mod consumers;
 mod scenarios;
 
 
+use std::ffi::OsStr;
+
 use failure::{ResultExt, Error};
 
 use trytostr::OsStrExt;
@@ -141,7 +143,7 @@ struct CommandLineHandler<'a> {
     /// Argument read from --jobs.
     max_num_of_children: usize,
     /// The command line that is executed for each scenario.
-    command_line: consumers::CommandLine<&'a str>,
+    command_line: consumers::CommandLine<&'a OsStr>,
     /// A logger that helps us print information to the user.
     logger: logger::Logger<'static>,
     /// A flag that is set if any error occurs during processing.
@@ -170,7 +172,7 @@ impl<'a> CommandLineHandler<'a> {
     }
 
     /// Creates a `CommandLine` from `args`.
-    fn command_line_from_args(args: &'a clap::ArgMatches) -> consumers::CommandLine<&'a str> {
+    fn command_line_from_args(args: &'a clap::ArgMatches) -> consumers::CommandLine<&'a OsStr> {
         let options = consumers::CommandLineOptions {
             is_strict: !args.is_present("lax"),
             ignore_env: args.is_present("ignore_env"),
@@ -181,7 +183,7 @@ impl<'a> CommandLineHandler<'a> {
         // present. And since it's a positional argument, i.e. not an
         // --option, being present also means not being empty. Hence,
         // it is safe to unwrap here.
-        args.values_of("command_line")
+        args.values_of_os("command_line")
             .and_then(|argv| consumers::CommandLine::with_options(argv, options))
             .unwrap()
     }

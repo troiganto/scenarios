@@ -14,6 +14,7 @@
 
 
 use std::io;
+use std::ffi::OsStr;
 use std::process::{Command, Child, ExitStatus};
 
 use failure::{Error, ResultExt};
@@ -30,17 +31,17 @@ use super::tokens::{PoolToken, TokenStock};
 /// Note that the fields `name` and `program` are only used to provide
 /// meaningful error messages if something goes wrong.
 #[derive(Debug)]
-pub struct PreparedChild {
+pub struct PreparedChild<'a> {
     /// The name of the corresponding scenario.
     name: String,
     /// The name of the running scenario.
-    program: String,
+    program: &'a OsStr,
     command: Command,
 }
 
-impl PreparedChild {
+impl<'a> PreparedChild<'a> {
     /// Creates a new `PreparedChild`.
-    pub fn new(name: String, program: String, command: Command) -> Self {
+    pub fn new(name: String, program: &'a OsStr, command: Command) -> Self {
         PreparedChild { name, program, command }
     }
 
@@ -58,7 +59,12 @@ impl PreparedChild {
         let program = self.program;
         let result = self.command
             .spawn()
-            .map_err(|cause| SpawnFailed { cause, name: program.clone() })
+            .map_err(
+                |cause| {
+                    let name = program.to_string_lossy().into_owned();
+                    SpawnFailed { cause, name }
+                },
+            )
             .with_context(|_| ScenarioNotStarted(name.clone()))
             .map_err(Error::from);
         match result {
