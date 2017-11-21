@@ -21,6 +21,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())
+        .usage("scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [-- <COMMAND>...]")
         .setting(clap::AppSettings::TrailingVarArg)
         .setting(AppSettings::DeriveDisplayOrder)
         // General args.
