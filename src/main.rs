@@ -204,7 +204,7 @@ impl<'a> CommandLineHandler<'a> {
             None => return Ok(num_cpus::get()),
         };
         let num = num.try_to_str()?;
-        let num = num.parse()?;
+        let num = num.parse().map_err(|_| NotANumber(num.to_owned()))?;
         Ok(num)
     }
 }
@@ -268,3 +268,8 @@ pub struct SomeScenariosFailed;
 #[derive(Debug, Fail)]
 #[fail(display = "no scenarios provided")]
 pub struct NoScenarios;
+
+
+#[derive(Debug, Fail)]
+#[fail(display = "not a number: {:?}", _0)]
+pub struct NotANumber(String);
