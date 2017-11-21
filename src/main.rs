@@ -123,12 +123,18 @@ where
     I: Iterator<Item = Result<Scenario<'s>, MergeError>>,
 {
     let mut printer = consumers::Printer::default();
-    if args.is_present("print0") {
-        printer.set_terminator("\0");
-    }
-    if let Some(template) = args.value_of("print0").or(args.value_of("print")) {
+    if let Some(template) = args.value_of_os("print0") {
+        let template = template
+            .try_to_str()
+            .context("could not parse --print0 argument")?;
         printer.set_template(template);
-    }
+        printer.set_terminator("\0");
+    } else if let Some(template) = args.value_of_os("print") {
+        let template = template
+            .try_to_str()
+            .context("could not parse --print argument")?;
+        printer.set_template(template);
+    };
     for scenario in scenarios {
         printer.print_scenario(&scenario?);
     }
