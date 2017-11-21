@@ -24,15 +24,19 @@ extern crate failure_derive;
 
 mod app;
 mod logger;
-mod scenarios;
+mod trytostr;
 mod cartesian;
 mod consumers;
+mod scenarios;
 
+
+use std::ffi::OsStr;
 
 use failure::{ResultExt, Error};
 
-use scenarios::{MergeError, Scenario, ScenarioFile};
+use trytostr::OsStrExt;
 use consumers::{PreparedChild, FinishedChild};
+use scenarios::{MergeError, Scenario, ScenarioFile};
 
 
 /// The entry point and wrapper around `try_main`.
@@ -79,9 +83,13 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
-    let scenario_files: Vec<ScenarioFile> = args.values_of("input")
+    let delimiter = args.value_of_os("delimiter")
+        .expect("default value")
+        .try_to_str()
+        .context("invalid value for --delimiter")?;
+    let scenario_files: Vec<ScenarioFile> = args.values_of_os("input")
         .ok_or(NoScenarios)?
-        .map(|path| ScenarioFile::from_file_or_stdin(path, is_strict))
+        .map(|path| ScenarioFile::from_cl_arg(path, is_strict))
         .collect::<Result<_, _>>()
         .context("could not read file")?;
     let all_scenarios: Vec<Vec<Scenario>> = scenario_files
@@ -93,13 +101,10 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Go through all possible combinations of scenarios and a merged
     // scenario for each of them. Hand these merged scenarios then over
     // to the correct handler.
-    let merge_opts = scenarios::MergeOptions {
-        delimiter: args.value_of("delimiter").expect("default value"),
-        is_strict: is_strict,
-    };
+    let merge_opts = scenarios::MergeOptions { delimiter, is_strict };
     let combos = cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_opts));
     if args.is_present("command_line") {
-        let handler = CommandLineHandler::new(&args);
+        let handler = CommandLineHandler::new(&args)?;
         consumers::loop_in_process_pool(combos, handler)?;
     } else {
         handle_printing(&args, combos)?;
@@ -118,12 +123,18 @@ where
     I: Iterator<Item = Result<Scenario<'s>, MergeError>>,
 {
     let mut printer = consumers::Printer::default();
-    if args.is_present("print0") {
-        printer.set_terminator("\0");
-    }
-    if let Some(template) = args.value_of("print0").or(args.value_of("print")) {
+    if let Some(template) = args.value_of_os("print0") {
+        let template = template
+            .try_to_str()
+            .context("could not parse --print0 argument")?;
         printer.set_template(template);
-    }
+        printer.set_terminator("\0");
+    } else if let Some(template) = args.value_of_os("print") {
+        let template = template
+            .try_to_str()
+            .context("could not parse --print argument")?;
+        printer.set_template(template);
+    };
     for scenario in scenarios {
         printer.print_scenario(&scenario?);
     }
@@ -138,7 +149,7 @@ struct CommandLineHandler<'a> {
     /// Argument read from --jobs.
     max_num_of_children: usize,
     /// The command line that is executed for each scenario.
-    command_line: consumers::CommandLine<&'a str>,
+    command_line: consumers::CommandLine<&'a OsStr>,
     /// A logger that helps us print information to the user.
     logger: logger::Logger<'static>,
     /// A flag that is set if any error occurs during processing.
@@ -153,18 +164,21 @@ impl<'a> CommandLineHandler<'a> {
     ///
     /// This reads the parsed command-line arguments and initializes
     /// the fields of this struct from them.
-    pub fn new(args: &'a clap::ArgMatches) -> Self {
-        CommandLineHandler {
+    pub fn new(args: &'a clap::ArgMatches) -> Result<Self, Error> {
+        let max_num_of_children = Self::max_num_tokens_from_args(args)
+            .context("invalid value for --jobs")?;
+        let handler = CommandLineHandler {
+            any_errors: false,
+            max_num_of_children,
             keep_going: args.is_present("keep_going"),
-            max_num_of_children: Self::max_num_tokens_from_args(args),
             command_line: Self::command_line_from_args(args),
             logger: logger::Logger::new(args.is_present("quiet")),
-            any_errors: false,
-        }
+        };
+        Ok(handler)
     }
 
     /// Creates a `CommandLine` from `args`.
-    fn command_line_from_args(args: &'a clap::ArgMatches) -> consumers::CommandLine<&'a str> {
+    fn command_line_from_args(args: &'a clap::ArgMatches) -> consumers::CommandLine<&'a OsStr> {
         let options = consumers::CommandLineOptions {
             is_strict: !args.is_present("lax"),
             ignore_env: args.is_present("ignore_env"),
@@ -175,20 +189,23 @@ impl<'a> CommandLineHandler<'a> {
         // present. And since it's a positional argument, i.e. not an
         // --option, being present also means not being empty. Hence,
         // it is safe to unwrap here.
-        args.values_of("command_line")
+        args.values_of_os("command_line")
             .and_then(|argv| consumers::CommandLine::with_options(argv, options))
             .unwrap()
     }
 
     /// Parses and interprets the `--jobs` option.
-    fn max_num_tokens_from_args(args: &clap::ArgMatches) -> usize {
+    fn max_num_tokens_from_args(args: &clap::ArgMatches) -> Result<usize, Error> {
         if !args.is_present("jobs") {
-            return 1;
+            return Ok(1);
         }
-        // We can unwrap the `parse()` result because clap validates --jobs.
-        args.value_of("jobs")
-            .map(|s| s.parse().unwrap())
-            .unwrap_or_else(num_cpus::get)
+        let num = match args.value_of_os("jobs") {
+            Some(num) => num,
+            None => return Ok(num_cpus::get()),
+        };
+        let num = num.try_to_str()?;
+        let num = num.parse().map_err(|_| NotANumber(num.to_owned()))?;
+        Ok(num)
     }
 }
 
@@ -247,6 +264,12 @@ impl<'a, 's> consumers::LoopDriver<Result<Scenario<'s>, MergeError>> for Command
 #[fail(display = "not all scenarios terminated successfully")]
 pub struct SomeScenariosFailed;
 
+
 #[derive(Debug, Fail)]
 #[fail(display = "no scenarios provided")]
 pub struct NoScenarios;
+
+
+#[derive(Debug, Fail)]
+#[fail(display = "not a number: {:?}", _0)]
+pub struct NotANumber(String);

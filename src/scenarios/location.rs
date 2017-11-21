@@ -14,6 +14,7 @@
 
 
 use std::fmt::{self, Display};
+use std::path::{Path, PathBuf};
 
 
 /// A type that encodes the location of an error in a file.
@@ -22,16 +23,16 @@ use std::fmt::{self, Display};
 /// occurs while parsing a scenario file. With it, the exact location
 /// can be pin-pointed.
 ///
-/// The type parameter `S` serves to abstract over the name being given
-/// as a `&str` or a `String`. The methods `as_ref` and `to_owned` help
-/// to convert between these two cases.
+/// The type parameter `P` serves to abstract over the name being given
+/// as owned or a shared reference. The methods `as_ref` and `to_owned`
+/// help convert between these two cases.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ErrorLocation<S: AsRef<str>> {
+pub struct ErrorLocation<P: AsRef<Path>> {
     /// The file's name or path.
     ///
     /// If the buffer being read is not a regular file, but instead.
     /// e.g. stdin, any other name can be used as well.
-    pub filename: S,
+    pub filename: P,
     /// The number of the line in which the error occured.
     ///
     /// Numbering starts with `1`. The value `0` means that the error
@@ -40,19 +41,19 @@ pub struct ErrorLocation<S: AsRef<str>> {
     pub lineno: usize,
 }
 
-impl<S: AsRef<str>> ErrorLocation<S> {
+impl<P: AsRef<Path>> ErrorLocation<P> {
     /// Creates a new error location without line number information.
-    pub fn new(filename: S) -> Self {
+    pub fn new(filename: P) -> Self {
         Self { filename, lineno: 0 }
     }
 
     /// Creates a new error location for a given file and line.
-    pub fn with_lineno(filename: S, lineno: usize) -> Self {
+    pub fn with_lineno(filename: P, lineno: usize) -> Self {
         Self { filename, lineno }
     }
 
     /// Creates a new error location that borrows from `self`.
-    pub fn as_ref(&self) -> ErrorLocation<&str> {
+    pub fn as_ref(&self) -> ErrorLocation<&Path> {
         ErrorLocation {
             filename: self.filename.as_ref(),
             lineno: self.lineno,
@@ -60,12 +61,7 @@ impl<S: AsRef<str>> ErrorLocation<S> {
     }
 
     /// Creates a new error location that owns its `filename` field.
-    ///
-    /// Note that this method differs from `ToOwned::to_owned()`. In
-    /// particular, the return value does not implement
-    /// `Borrow<ErrorLocation<&S>>`. The reason is that our `borrow()`
-    /// method does not match the required signature.
-    pub fn to_owned(&self) -> ErrorLocation<String> {
+    pub fn to_owned(&self) -> ErrorLocation<PathBuf> {
         ErrorLocation {
             filename: self.filename.as_ref().to_owned(),
             lineno: self.lineno,
@@ -73,12 +69,13 @@ impl<S: AsRef<str>> ErrorLocation<S> {
     }
 }
 
-impl<S: AsRef<str>> Display for ErrorLocation<S> {
+impl<P: AsRef<Path>> Display for ErrorLocation<P> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let filename = self.filename.as_ref().display();
         if self.lineno != 0 {
-            write!(f, "in {}:{}", self.filename.as_ref(), self.lineno)
+            write!(f, "in {}:{}", filename, self.lineno)
         } else {
-            write!(f, "file \"{}\"", self.filename.as_ref())
+            write!(f, "file \"{}\"", filename)
         }
     }
 }

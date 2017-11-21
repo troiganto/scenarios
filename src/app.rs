@@ -21,6 +21,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())
+        .usage("scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [-- <COMMAND>...]")
         .setting(clap::AppSettings::TrailingVarArg)
         .setting(AppSettings::DeriveDisplayOrder)
         // General args.
@@ -160,7 +161,6 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .value_name("N")
              .min_values(0)
              .max_values(1)
-             .validator(|s| if s.parse::<usize>().is_ok() { Ok(()) } else { Err(s) })
             .help("The number of COMMANDs to execute in parallel.")
             .long_help("The number of COMMANDs to execute in parallel. \
                        If no number is passed, the detected number of \

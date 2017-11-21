@@ -14,6 +14,8 @@
 
 
 use std::fs::File;
+use std::ffi::OsStr;
+use std::path::Path;
 use std::io::{self, BufRead};
 use std::collections::hash_map::{HashMap, Entry};
 
@@ -38,31 +40,31 @@ use super::inputline::InputLine;
 /// pointless copies.
 #[derive(Debug)]
 pub struct ScenarioFile<'a> {
-    filename: &'a str,
+    filename: &'a Path,
     lines: Vec<InputLine>,
 }
 
 impl<'a> ScenarioFile<'a> {
-    /// Like `from_file`, but also handles `path == "-"`.
+    /// Takes a command-line argument and opens a file from it.
     ///
     /// If `path` equals `"-"`, this reads scenarios from stdin.
     /// Otherwise, it reads from the regular file located at `path`.
     ///
     /// See `new()` for more information.
-    pub fn from_file_or_stdin(path: &str, is_strict: bool) -> Result<ScenarioFile, Error> {
+    pub fn from_cl_arg(path: &OsStr, is_strict: bool) -> Result<ScenarioFile, Error> {
         let stdin = io::stdin();
-        if path == "-" {
-            Self::new(stdin.lock(), "<stdin>", is_strict)
+        if path == Path::new("-") {
+            Self::new(stdin.lock(), "<stdin>".as_ref(), is_strict)
         } else {
             let file = File::open(path)
                 .with_context(|_| ErrorLocation::new(path.to_owned()))?;
             let file = io::BufReader::new(file);
-            Self::new(file, path, is_strict)
+            Self::new(file, path.as_ref(), is_strict)
         }
     }
 
     /// Reads scenarios from a given buffered reader.
-    pub fn new<F>(reader: F, filename: &str, is_strict: bool) -> Result<ScenarioFile, Error>
+    fn new<F>(reader: F, filename: &Path, is_strict: bool) -> Result<ScenarioFile, Error>
     where
         F: BufRead,
     {
@@ -132,7 +134,7 @@ impl<'a> ScenarioFile<'a> {
         Ok(())
     }
 
-    pub fn filename(&self) -> &str {
+    pub fn filename(&self) -> &Path {
         self.filename
     }
 
@@ -154,13 +156,13 @@ impl<'a, 'b: 'a> IntoIterator for &'a ScenarioFile<'b> {
 /// An iterator that reads `Scenario`s from a `BufRead` variable.
 #[derive(Debug, Clone)]
 pub struct ScenariosIter<'a> {
-    location: ErrorLocation<&'a str>,
+    location: ErrorLocation<&'a Path>,
     lines: &'a [InputLine],
 }
 
 impl<'a> ScenariosIter<'a> {
     /// Creates a new instance.
-    fn new(filename: &'a str, lines: &'a [InputLine]) -> Self {
+    fn new(filename: &'a Path, lines: &'a [InputLine]) -> Self {
         let location = ErrorLocation::new(filename);
         ScenariosIter { location, lines }
     }
@@ -264,11 +266,11 @@ mod tests {
 
 
     fn get_scenarios(contents: &str) -> Result<ScenarioFile, Error> {
-        ScenarioFile::new(Cursor::new(contents), "<memory>", true)
+        ScenarioFile::new(Cursor::new(contents), Path::new("<memory>"), true)
     }
 
     fn get_scenarios_lax(contents: &str) -> Result<ScenarioFile, Error> {
-        ScenarioFile::new(Cursor::new(contents), "<memory>", false)
+        ScenarioFile::new(Cursor::new(contents), Path::new("<memory>"), false)
     }
 
     fn assert_vars(s: &Scenario, variables: &[(&str, &str)]) {
