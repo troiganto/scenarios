@@ -5,7 +5,8 @@ authors = ["Nico Madysa <nico.madysa@tu-dresden.de>"]
 description = "Run a command line multiple times in different environments."
 
 [dependencies]
-num_cpus = "*"
+clap = { version = "*", default-features = false, features = ["wrap_help"] }
 failure = "*"
 failure_derive = "*"
-clap = { version = "*", default-features = false, features = ["wrap_help"] }
+glob = "*"
+num_cpus = "*"

@@ -30,10 +30,11 @@
 
 #[macro_use]
 extern crate clap;
-extern crate num_cpus;
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
+extern crate glob;
+extern crate num_cpus;
 
 
 pub mod app;
