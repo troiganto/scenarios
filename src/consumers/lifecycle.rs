@@ -28,8 +28,7 @@ use super::children::FinishedChild;
 /// callbacks during the actual loop.
 ///
 /// By returning an error, the implementor is able to abort the loop at
-/// any time. (Note that nonetheless, all child processes are always
-/// waited for!)
+/// any time. Nonetheless, all child processes are always waited for.
 pub trait LoopDriver<Item> {
     /// Returns the number of children allowed to run in parallel.
     fn max_num_of_children(&self) -> usize;
@@ -62,7 +61,7 @@ pub trait LoopDriver<Item> {
     /// return it later from `LoopDriver::on_finish()`.
     fn on_loop_failed(&mut self, error: Error);
 
-    /// Like `reap()` but called from the clean-up loop.
+    /// Like `on_reap()` but called by the clean-up loop.
     ///
     /// This call-back for terminated processes is chosen if an error
     /// has occured and the loop has been aborted. Because an error is
@@ -84,7 +83,7 @@ pub trait LoopDriver<Item> {
 }
 
 
-/// Treat items one after another, starting a child process for each.
+/// Handle items from an iterator, starting a child process for each.
 ///
 /// This goes through the `items` and starts one child process for each
 /// of them. The `PoolToken` mechanism limits the number of processes
@@ -92,12 +91,14 @@ pub trait LoopDriver<Item> {
 ///
 /// A `LoopDriver` type is used to drive the loop and answer callbacks.
 ///
+/// # Errors
+///
 /// If any error occurs, the loop is exited immediately. However, all
 /// child processes are still properly waited for before this function
 /// returns.
 ///
-/// # Errors
 /// This function exits with an error if:
+///
 /// - spawning a child process fails;
 /// - waiting on a child process fails;
 /// - any one of the calls to `driver` fails.

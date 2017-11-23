@@ -13,6 +13,13 @@
 // permissions and limitations under the License.
 
 
+//! Contains all scenario-related functionality.
+//!
+//! This contains, most importantly, the `Scenario` type, as well as
+//! the `ScenarioFile` type, which allows reading scenarios from text
+//! files.
+
+
 mod inputline;
 mod location;
 mod scenario;

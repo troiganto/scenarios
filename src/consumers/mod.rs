@@ -13,6 +13,9 @@
 // permissions and limitations under the License.
 
 
+//! Provides types that accept scenarios and do something with them.
+
+
 mod pool;
 mod tokens;
 mod printer;
@@ -27,4 +30,5 @@ pub use self::commandline::Options as CommandLineOptions;
 pub use self::lifecycle::LoopDriver;
 pub use self::lifecycle::loop_in_process_pool;
 pub use self::children::PreparedChild;
+pub use self::children::RunningChild;
 pub use self::children::FinishedChild;

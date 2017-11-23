@@ -13,7 +13,20 @@
 // permissions and limitations under the License.
 
 
+//! `Scenarios` is a command-line tool that allows you to execute the
+//! same command multiple times, each time with different environment
+//! variables set. When passed multiple lists of environments,
+//! `scenarios` goes through all possible combinations between them.
+//!
+//! `scenarios` is available on [Github][].
+//!
+//! [Github]: https://github.com/troiganto/scenarios
+
+
+// This is an application and, as such, contains functionality that is
+// not strictly necessary.
 #![allow(dead_code)]
+
 
 #[macro_use]
 extern crate clap;
@@ -22,12 +35,13 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 
-mod app;
-mod logger;
-mod trytostr;
-mod cartesian;
-mod consumers;
-mod scenarios;
+
+pub mod app;
+pub mod logger;
+pub mod trytostr;
+pub mod cartesian;
+pub mod consumers;
+pub mod scenarios;
 
 
 use std::ffi::OsStr;
@@ -40,7 +54,7 @@ use scenarios::{MergeError, Scenario, ScenarioFile};
 
 
 /// The entry point and wrapper around `try_main`.
-fn main() {
+pub fn main() {
     let exit_code: i32 = {
         // Get clapp::App instance.
         let app = app::get_app();
@@ -79,7 +93,7 @@ fn main() {
 /// The actual main function.
 ///
 /// It receives the fully parsed arguments and may return an error.
-fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
+pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
@@ -118,7 +132,7 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 /// # Errors
 /// This fails if two variable names conflict and strict mode is
 /// enabled.
-fn handle_printing<'s, I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
+pub fn handle_printing<'s, I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario<'s>, MergeError>>,
 {
@@ -143,7 +157,7 @@ where
 
 
 /// Helper struct that breaks up the task of executing a command line.
-struct CommandLineHandler<'a> {
+pub struct CommandLineHandler<'a> {
     /// Flag read from --keep-going.
     keep_going: bool,
     /// Argument read from --jobs.

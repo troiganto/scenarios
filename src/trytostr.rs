@@ -13,6 +13,9 @@
 // permissions and limitations under the License.
 
 
+//! Provides the method `try_to_str` on `OsStr` for nicer conversion.
+
+
 use std::ffi::{OsStr, OsString};
 
 

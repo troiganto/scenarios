@@ -13,8 +13,9 @@
 // permissions and limitations under the License.
 
 
-//! Module that provides the function `cartesian::product()`. The
-//! name has been chosen entirely for this combination.
+//! Provides the function `cartesian::product()`.
+//!
+//! The name has been chosen entirely for this combination.
 
 
 /// Iterates over the Cartesian product of a list of containers.

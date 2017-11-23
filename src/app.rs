@@ -13,6 +13,9 @@
 // permissions and limitations under the License.
 
 
+//! Contains all calls to `clap` so it doesn't clutter `main`.
+
+
 use clap::{self, Arg, ArgGroup, App, AppSettings};
 
 

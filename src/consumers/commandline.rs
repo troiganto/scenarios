@@ -29,7 +29,7 @@ use super::children::{PreparedChild, ScenarioNotStarted};
 const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
 
 
-/// A wrapper around the customization flags of a `CommandLine`.
+/// Customization flags for `CommandLine`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     /// Start child processes in a clean environment.
@@ -37,12 +37,11 @@ pub struct Options {
     /// If `true`, child processes only receive those environment
     /// variables that are defined in a scenario.
     /// If `false`, child processes inherit the environment of this
-    /// process, updated with the variables of their respective
-    /// scenario.
+    /// process, plus the variables of the scenarios.
     ///
     /// The default is `false`.
     pub ignore_env: bool,
-    /// Replace "{}" with the scenario name in the command line.
+    /// Replace all `"{}"` in the command line with the scenario name.
     ///
     /// If `true`, use a `Printer` to insert the scenario's name into
     /// the command line when executing it.
@@ -53,20 +52,19 @@ pub struct Options {
     /// Define a variable "SCENARIOS_NAME".
     ///
     /// If `true`, always define an additional environment variable
-    /// whose name is defined in `SCENARIOS_NAME_NAME`. This variable
-    /// contains the name of the scenario in which the child process is
-    /// being executed.
+    /// whose name is `"SCENARIOS_NAME"`. This variable contains the
+    /// name of the scenario in which the child process is being
+    /// executed.
     ///
     /// The default is `true`.
     pub add_scenarios_name: bool,
     /// Check for previous definitions of "SCENARIOS_NAME".
     ///
     /// If `true`, it is an error to set `add_scenarios_name` to `true`
-    /// *and* supply your own environment variable whose name is equal
-    /// to `SCENARIOS_NAME_NAME`.
-    /// If this is `false` and `add_scenarios_name` is `true`, such a
-    /// variable gets silently overwritten.
-    /// If `add_scenarios_name` is `false`, this has option no effect.
+    /// *and* supply your own environment variable whose name is
+    /// `"SCENARIOS_NAME"`. If this is `false` and `add_scenarios_name`
+    /// is `true`, such a variable gets silently overwritten. If
+    /// `add_scenarios_name` is `false`, this has option no effect.
     ///
     /// The default is `true`.
     pub is_strict: bool,
@@ -85,7 +83,7 @@ impl Default for Options {
 }
 
 
-/// A `Consumer` of `Scenario`s that executes a command line in them.
+/// A consumer of `Scenario`s that executes a command line in them.
 ///
 /// This uses the variable definitions in a scenario to define
 /// environment variables. In this environment, the specified command
@@ -132,7 +130,7 @@ impl<S: AsRef<OsStr>> CommandLine<S> {
         Self::with_options(command_line, Default::default())
     }
 
-    /// Like `new()`, but allows you to also specify the options.
+    /// Like `new()`, but allows you to also pass `Options`.
     pub fn with_options<I>(command_line: I, options: Options) -> Option<Self>
     where
         I: IntoIterator<Item = S>,
@@ -188,8 +186,8 @@ impl<S: AsRef<OsStr>> CommandLine<S> {
     ///
     /// # Errors
     /// This fails if strict mode is enabled and the scenario contains
-    /// a variable definition for `SCENARIOS_NAME` even though this
-    /// command line is instructed to add such a variable itself. (See
+    /// a variable named `"SCENARIOS_NAME"` even though this command
+    /// line is instructed to add such a variable itself. (See
     /// documentation of `Options` for more information.)
     pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild, Error> {
         let (name, variables) = scenario.into_parts();

@@ -45,12 +45,27 @@ pub struct ScenarioFile<'a> {
 }
 
 impl<'a> ScenarioFile<'a> {
-    /// Takes a command-line argument and opens a file from it.
+    /// Takes a command-line argument and reads a file from it.
     ///
     /// If `path` equals `"-"`, this reads scenarios from stdin.
     /// Otherwise, it reads from the regular file located at `path`.
     ///
-    /// See `new()` for more information.
+    /// If `is_strict` is `true`, this function checks after reading
+    /// whether any two scenarios in it have the same name. If they do,
+    /// this function returns an error. If `is_strict` is `false`, the
+    /// check is not performed.
+    ///
+    /// Note that this call reads all lines in the file into memory,
+    /// but does not create any `Scenario`s yet. Scenarios can be
+    /// created via `iter()`.
+    ///
+    /// # Errors
+    /// This function may fail for any of the following reasons:
+    /// 1. The file located at `path` cannot be opened.
+    /// 2. Reading from the file fails at any point.
+    /// 3. The file breaks the syntax of scenario files.
+    /// 4. The file defines two scenarios with the same name. (only if
+    /// `is_strict==true`).
     pub fn from_cl_arg(path: &OsStr, is_strict: bool) -> Result<ScenarioFile, Error> {
         let stdin = io::stdin();
         if path == Path::new("-") {
@@ -134,10 +149,15 @@ impl<'a> ScenarioFile<'a> {
         Ok(())
     }
 
+    /// Returns the name of the file that was read.
+    ///
+    /// For stdin, this is `"<stdin>"`. For any regular file, this is
+    /// the path to it.
     pub fn filename(&self) -> &Path {
         self.filename
     }
 
+    /// Returns an iterator that creates scenarios from the file.
     pub fn iter(&self) -> ScenariosIter {
         ScenariosIter::new(self.filename, &self.lines)
     }
@@ -153,7 +173,7 @@ impl<'a, 'b: 'a> IntoIterator for &'a ScenarioFile<'b> {
 }
 
 
-/// An iterator that reads `Scenario`s from a `BufRead` variable.
+/// An iterator that reads `Scenario`s from a `ScenarioFile`.
 #[derive(Debug, Clone)]
 pub struct ScenariosIter<'a> {
     location: ErrorLocation<&'a Path>,
@@ -174,8 +194,8 @@ impl<'a> ScenariosIter<'a> {
     /// `next()`.
     ///
     /// # Errors
-    /// * `io::Error` if a line cannot be read.
-    /// * `inputline::SyntaxError` if a line cannot be interpreted.
+    /// This may fail either with a `ScenarioError` or an
+    /// `UnexpectedVarDef`.
     fn next_scenario(&mut self) -> Result<Option<Scenario<'a>>, Error> {
         let mut scenario = match self.next_header_line()? {
             Some(line) => Scenario::new(line)?,
@@ -191,8 +211,7 @@ impl<'a> ScenariosIter<'a> {
     ///
     /// # Errors
     /// If a definition line is found, the line counter is still
-    /// incremented, but a `ScenarioError::UnexpectedVarDef` is
-    /// returned.
+    /// incremented, but a `UnexpectedVarDef` is returned.
     fn next_header_line(&mut self) -> Result<Option<&'a str>, UnexpectedVarDef> {
         while let Some(line) = self.lines.get(self.location.lineno) {
             self.location.lineno += 1;
@@ -230,6 +249,15 @@ impl<'a> ScenariosIter<'a> {
 impl<'a> Iterator for ScenariosIter<'a> {
     type Item = Result<Scenario<'a>, Error>;
 
+    /// Reads the next scenario from the scenario file.
+    ///
+    /// # Errors
+    ///
+    /// This may fail if the scenario's definition is bad:
+    ///
+    /// - The scenario cannot be build (see `ScenarioError`);
+    /// - a variable was defined outside of any scenario (see
+    ///   `UnexpectedVarDef`).
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_scenario()
                   .with_context(|_| self.location.to_owned()) {

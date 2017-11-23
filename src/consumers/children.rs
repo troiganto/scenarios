@@ -22,7 +22,7 @@ use failure::{Error, ResultExt};
 use super::tokens::{PoolToken, TokenStock};
 
 
-/// Wrapper type that combines `std::process::Command` with a name.
+/// Wrapper type combining `std::process::Command` with a name.
 ///
 /// This type is returned by `CommandLine` and represents a process
 /// that is ready to start. Starting it requires a `PoolToken`,
@@ -96,7 +96,7 @@ impl<'a> PreparedChild<'a> {
 
 /// Wrapper type combining `std::process::Child` with name and token.
 ///
-/// This type is returned by `PreparedChild::spawn` and represents a
+/// This type is returned by `PreparedChild::spawn()` and represents a
 /// process that is currently running. The correct process is to wait
 /// on it and then call `RunningChild::finish()`.
 #[derive(Debug)]
@@ -123,7 +123,7 @@ impl RunningChild {
         Ok(status.is_some())
     }
 
-    /// Turns the `RunningChild` into a `FinishedChild`.
+    /// Waits for the `RunningChild` to turn into a `FinishedChild`.
     ///
     /// This also returns the `PoolToken` that the child had.
     ///
