@@ -24,6 +24,7 @@ mod inputline;
 mod location;
 mod scenario;
 mod scenario_file;
+mod filter;
 
 pub use self::scenario::Scenario;
 pub use self::scenario::MergeOptions;
