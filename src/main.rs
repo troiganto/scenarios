@@ -169,13 +169,15 @@ where
             .try_to_str()
             .context("invalid value for --print0")?;
         printer.set_template(template);
-        printer.set_terminator("\0");
     } else if let Some(template) = args.value_of_os("print") {
         let template = template
             .try_to_str()
             .context("invalid value for --print")?;
         printer.set_template(template);
     };
+    if args.is_present("print0") {
+        printer.set_terminator("\0");
+    }
     for scenario in scenarios {
         printer.print_scenario(&scenario?);
     }
