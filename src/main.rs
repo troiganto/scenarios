@@ -113,11 +113,20 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
         .collect::<Result<_, _>>()
         .context("could not build scenarios")?;
 
-    // Go through all possible combinations of scenarios and a merged
-    // scenario for each of them. Hand these merged scenarios then over
-    // to the correct handler.
+    // For each possible combination of scenarios, merge the combination
+    // into a single scenario and check if it's allowed by the
+    // `NameFilter`. We let errors automatically pass the filter so that we
+    // can display them to the user.
+    let filter = name_filter_from_args(args)?;
     let merge_opts = scenarios::MergeOptions { delimiter, is_strict };
-    let combos = cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_opts));
+    let combos = cartesian::product(&all_scenarios)
+        .map(|set| Scenario::merge_all(set, merge_opts))
+        .filter(
+            |result| match *result {
+                Ok(ref scenario) => filter.allows(scenario),
+                Err(_) => true,
+            },
+        );
     if args.is_present("command_line") {
         let handler = CommandLineHandler::new(&args)?;
         consumers::loop_in_process_pool(combos, handler)?;
@@ -125,6 +134,23 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
         handle_printing(&args, combos)?;
     }
     Ok(())
+}
+
+
+/// Creates a `NameFilter` from `args`.
+fn name_filter_from_args(args: &clap::ArgMatches) -> Result<scenarios::NameFilter, Error> {
+    let filter = if let Some(pattern) = args.value_of("choose") {
+        scenarios::NameFilter::new_whitelist()
+            .add_pattern(pattern)
+            .context("invalid value for --choose")?
+    } else if let Some(pattern) = args.value_of("exclude") {
+        scenarios::NameFilter::new_blacklist()
+            .add_pattern(pattern)
+            .context("invalid value for --exclude")?
+    } else {
+        scenarios::NameFilter::default()
+    };
+    Ok(filter)
 }
 
 

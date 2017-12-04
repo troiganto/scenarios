@@ -45,11 +45,21 @@ impl NameFilter {
         NameFilter { mode, pattern: None }
     }
 
+    /// Alias for `new(Mode::IgnoreMatching)`.
+    pub fn new_blacklist() -> Self {
+        Self::new(Mode::IgnoreMatching)
+    }
+
+    /// Alias for `new(Mode::ChooseMatching)`.
+    pub fn new_whitelist() -> Self {
+        Self::new(Mode::ChooseMatching)
+    }
+
     /// Returns `true` if the filter allows this scenario.
     ///
     /// Depending on the filter's `Mode`, the scenario's name must
     /// either match or *not* match the filter's pattern to be allowed.
-    pub fn is_allowed(&self, scenario: &Scenario) -> bool {
+    pub fn allows(&self, scenario: &Scenario) -> bool {
         let options = MatchOptions {
             case_sensitive: true,
             require_literal_separator: false,
@@ -121,23 +131,23 @@ mod tests {
     #[test]
     fn test_default() {
         let s = Scenario::new("a").unwrap();
-        assert!(NameFilter::default().is_allowed(&s));
+        assert!(NameFilter::default().allows(&s));
     }
 
     #[test]
     fn test_exclusion() {
         let s = Scenario::new("a").unwrap();
-        assert!(!NameFilter::new(Mode::ChooseMatching).is_allowed(&s));
+        assert!(!NameFilter::new_whitelist().allows(&s));
     }
 
     #[test]
     fn test_ignore() {
         let names = ["bark", "berk", "birk", "bork", "burk"];
-        let blacklist = NameFilter::default().add_pattern("?i*").unwrap();
+        let blacklist = NameFilter::new_blacklist().add_pattern("?i*").unwrap();
         let filtered = names
             .iter()
             .map(|n| Scenario::new(*n).expect(n))
-            .filter(|s| blacklist.is_allowed(&s))
+            .filter(|s| blacklist.allows(&s))
             .map(|s| s.name().to_owned())
             .collect::<Vec<_>>();
         assert_eq!(filtered, &["bark", "berk", "bork", "burk"]);
@@ -146,13 +156,13 @@ mod tests {
     #[test]
     fn test_choose() {
         let names = ["bark", "berk", "birk", "bork", "burk"];
-        let blacklist = NameFilter::new(Mode::ChooseMatching)
+        let blacklist = NameFilter::new_whitelist()
             .add_pattern("?[aou]rk")
             .unwrap();
         let filtered = names
             .iter()
             .map(|n| Scenario::new(*n).expect(n))
-            .filter(|s| blacklist.is_allowed(&s))
+            .filter(|s| blacklist.allows(&s))
             .map(|s| s.name().to_owned())
             .collect::<Vec<_>>();
         assert_eq!(filtered, &["bark", "bork", "burk"]);
