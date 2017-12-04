@@ -167,13 +167,13 @@ where
     if let Some(template) = args.value_of_os("print0") {
         let template = template
             .try_to_str()
-            .context("could not parse --print0 argument")?;
+            .context("invalid value for --print0")?;
         printer.set_template(template);
         printer.set_terminator("\0");
     } else if let Some(template) = args.value_of_os("print") {
         let template = template
             .try_to_str()
-            .context("could not parse --print argument")?;
+            .context("invalid value for --print")?;
         printer.set_template(template);
     };
     for scenario in scenarios {
