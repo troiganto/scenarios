@@ -12,9 +12,10 @@
 // implied. See the License for the specific language governing
 // permissions and limitations under the License.
 
+use std::fmt;
 
-use glob::{Pattern, MatchOptions};
-use failure::Error;
+use glob::{self, Pattern, MatchOptions};
+use failure::{Error, ResultExt};
 
 use super::Scenario;
 
@@ -96,7 +97,10 @@ impl NameFilter {
 
     /// Sets the filter's pattern.
     pub fn set_pattern(&mut self, pattern: &str) -> Result<(), Error> {
-        self.pattern = Some(Pattern::new(pattern)?);
+        let pattern = Pattern::new(pattern)
+            .map_err(PatternError)
+            .with_context(|_| BadPattern(pattern.to_owned()))?;
+        self.pattern = Some(pattern);
         Ok(())
     }
 
@@ -119,6 +123,27 @@ pub enum Mode {
 impl Default for Mode {
     fn default() -> Self {
         Mode::IgnoreMatching
+    }
+}
+
+
+#[derive(Debug, Fail)]
+#[fail(display = "invalid glob pattern: {:?}", _0)]
+pub struct BadPattern(String);
+
+
+#[derive(Debug, Fail)]
+pub struct PatternError(glob::PatternError);
+
+impl PatternError {
+    pub fn into_inner(self) -> glob::PatternError {
+        self.0
+    }
+}
+
+impl fmt::Display for PatternError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} near index {}", self.0.msg, self.0.pos)
     }
 }
 

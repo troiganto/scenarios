@@ -116,6 +116,31 @@ mod printing {
             .output();
         assert!(!output.status.success());
     }
+
+
+    #[test]
+    fn test_choose() {
+        let expected = "A1\n";
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .args(&["--choose", "?1"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
+
+    #[test]
+    fn test_exclude() {
+        let expected = "1\n3\n5\n";
+        let output = Runner::new()
+            .scenario_file("many_scenarios.ini")
+            .args(&["--exclude", "[24]"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
 }
 
 mod environment {
