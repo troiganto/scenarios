@@ -61,6 +61,7 @@ impl<'a> ScenarioFile<'a> {
     ///
     /// # Errors
     /// This function may fail for any of the following reasons:
+    ///
     /// 1. The file located at `path` cannot be opened.
     /// 2. Reading from the file fails at any point.
     /// 3. The file breaks the syntax of scenario files.

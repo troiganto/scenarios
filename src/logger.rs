@@ -18,6 +18,7 @@
 //! While using a crate like `slog` or `env_logger` might come first to
 //! mind, even the smallest of their implementations is still way
 //! overblown for this application. For example:
+//!
 //! - our logging is entirely single-threaded,
 //! - does not need timestamps,
 //! - does not need logging levels,

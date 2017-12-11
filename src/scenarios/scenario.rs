@@ -153,7 +153,7 @@ impl<'a> Scenario<'a> {
     /// `opts.strict` is `false`, the value of `other`'s takes
     /// precedence.
     ///
-    /// #Errors
+    /// # Errors
     /// If `ops.strict` is `true` and both scenarios define the same
     /// variable, `MergeError` is returned.
     pub fn merge(&mut self, other: &Scenario<'a>, opts: MergeOptions) -> Result<(), MergeError> {
