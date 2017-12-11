@@ -13,21 +13,36 @@
 // permissions and limitations under the License.
 
 
+//! `Scenarios` is a command-line tool that allows you to execute the
+//! same command multiple times, each time with different environment
+//! variables set. When passed multiple lists of environments,
+//! `scenarios` goes through all possible combinations between them.
+//!
+//! `scenarios` is available on [Github][].
+//!
+//! [Github]: https://github.com/troiganto/scenarios
+
+
+// This is an application and, as such, contains functionality that is
+// not strictly necessary.
 #![allow(dead_code)]
+
 
 #[macro_use]
 extern crate clap;
-extern crate num_cpus;
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
+extern crate glob;
+extern crate num_cpus;
 
-mod app;
-mod logger;
-mod trytostr;
-mod cartesian;
-mod consumers;
-mod scenarios;
+
+pub mod app;
+pub mod logger;
+pub mod trytostr;
+pub mod cartesian;
+pub mod consumers;
+pub mod scenarios;
 
 
 use std::ffi::OsStr;
@@ -40,7 +55,7 @@ use scenarios::{MergeError, Scenario, ScenarioFile};
 
 
 /// The entry point and wrapper around `try_main`.
-fn main() {
+pub fn main() {
     let exit_code: i32 = {
         // Get clapp::App instance.
         let app = app::get_app();
@@ -79,7 +94,7 @@ fn main() {
 /// The actual main function.
 ///
 /// It receives the fully parsed arguments and may return an error.
-fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
+pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
@@ -98,11 +113,20 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
         .collect::<Result<_, _>>()
         .context("could not build scenarios")?;
 
-    // Go through all possible combinations of scenarios and a merged
-    // scenario for each of them. Hand these merged scenarios then over
-    // to the correct handler.
+    // For each possible combination of scenarios, merge the combination
+    // into a single scenario and check if it's allowed by the
+    // `NameFilter`. We let errors automatically pass the filter so that we
+    // can display them to the user.
+    let filter = name_filter_from_args(args)?;
     let merge_opts = scenarios::MergeOptions { delimiter, is_strict };
-    let combos = cartesian::product(&all_scenarios).map(|set| Scenario::merge_all(set, merge_opts));
+    let combos = cartesian::product(&all_scenarios)
+        .map(|set| Scenario::merge_all(set, merge_opts))
+        .filter(
+            |result| match *result {
+                Ok(ref scenario) => filter.allows(scenario),
+                Err(_) => true,
+            },
+        );
     if args.is_present("command_line") {
         let handler = CommandLineHandler::new(&args)?;
         consumers::loop_in_process_pool(combos, handler)?;
@@ -113,12 +137,35 @@ fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 }
 
 
+/// Creates a `NameFilter` from `args`.
+fn name_filter_from_args(args: &clap::ArgMatches) -> Result<scenarios::NameFilter, Error> {
+    let filter = if let Some(pattern) = args.value_of_os("choose") {
+        let filter = scenarios::NameFilter::new_whitelist();
+        pattern
+            .try_to_str()
+            .map_err(Error::from)
+            .and_then(|p| filter.add_pattern(p))
+            .context("invalid value for --choose")?
+    } else if let Some(pattern) = args.value_of_os("exclude") {
+        let filter = scenarios::NameFilter::new_blacklist();
+        pattern
+            .try_to_str()
+            .map_err(Error::from)
+            .and_then(|p| filter.add_pattern(p))
+            .context("invalid value for --exclude")?
+    } else {
+        scenarios::NameFilter::default()
+    };
+    Ok(filter)
+}
+
+
 /// Prints the given scenarios to stdout.
 ///
 /// # Errors
 /// This fails if two variable names conflict and strict mode is
 /// enabled.
-fn handle_printing<'s, I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
+pub fn handle_printing<'s, I>(args: &clap::ArgMatches, scenarios: I) -> Result<(), Error>
 where
     I: Iterator<Item = Result<Scenario<'s>, MergeError>>,
 {
@@ -126,15 +173,17 @@ where
     if let Some(template) = args.value_of_os("print0") {
         let template = template
             .try_to_str()
-            .context("could not parse --print0 argument")?;
+            .context("invalid value for --print0")?;
         printer.set_template(template);
-        printer.set_terminator("\0");
     } else if let Some(template) = args.value_of_os("print") {
         let template = template
             .try_to_str()
-            .context("could not parse --print argument")?;
+            .context("invalid value for --print")?;
         printer.set_template(template);
     };
+    if args.is_present("print0") {
+        printer.set_terminator("\0");
+    }
     for scenario in scenarios {
         printer.print_scenario(&scenario?);
     }
@@ -143,7 +192,7 @@ where
 
 
 /// Helper struct that breaks up the task of executing a command line.
-struct CommandLineHandler<'a> {
+pub struct CommandLineHandler<'a> {
     /// Flag read from --keep-going.
     keep_going: bool,
     /// Argument read from --jobs.

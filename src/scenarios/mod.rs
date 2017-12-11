@@ -13,11 +13,21 @@
 // permissions and limitations under the License.
 
 
+//! Contains all scenario-related functionality.
+//!
+//! This contains, most importantly, the `Scenario` type, as well as
+//! the `ScenarioFile` type, which allows reading scenarios from text
+//! files.
+
+
 mod inputline;
 mod location;
 mod scenario;
 mod scenario_file;
+mod filter;
 
+pub use self::filter::NameFilter;
+pub use self::filter::Mode as FilterMode;
 pub use self::scenario::Scenario;
 pub use self::scenario::MergeOptions;
 pub use self::scenario_file::ScenarioFile;

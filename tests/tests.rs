@@ -116,6 +116,31 @@ mod printing {
             .output();
         assert!(!output.status.success());
     }
+
+
+    #[test]
+    fn test_choose() {
+        let expected = "A1\n";
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .args(&["--choose", "?1"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
+
+    #[test]
+    fn test_exclude() {
+        let expected = "1\n3\n5\n";
+        let output = Runner::new()
+            .scenario_file("many_scenarios.ini")
+            .args(&["--exclude", "[24]"])
+            .output();
+        assert_eq!("", &output.stderr);
+        assert_eq!(expected, &output.stdout);
+        assert!(output.status.success());
+    }
 }
 
 mod environment {
@@ -362,6 +387,155 @@ scenarios: not all scenarios terminated successfully
         let output = stop_at_scenario("1", &["--keep-going", "--jobs=3"]).output();
         assert_eq!(expected_stderr, &output.stderr);
         assert_eq!(expected_stdout, &output.stdout);
+        assert!(!output.status.success());
+    }
+}
+
+mod invalid_args {
+    use runner::Runner;
+    use runner::OsStringExt;
+    use std::ffi::OsString;
+
+
+    #[test]
+    fn test_delimiter() {
+        let expected = r#"scenarios: error: invalid value for --delimiter
+scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+"#;
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg("--delimiter")
+            .arg(OsString::from_bytes(b"\xfa"))
+            .output();
+        assert_eq!(expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_input_file() {
+        // Here we check that a non-UTF8 filename does not cause a panic.
+        let expected_first_line = "scenarios: error: could not read file";
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg(OsString::from_bytes(b"broken_name_\xfa.ini"))
+            .output();
+        let first_line = output.stderr.lines().next().unwrap();
+        assert_eq!(expected_first_line, first_line);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_choose() {
+        let expected = r#"scenarios: error: invalid value for --choose
+scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+"#;
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg("--choose")
+            .arg(OsString::from_bytes(b"\xfa"))
+            .output();
+        assert_eq!(expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_exclude() {
+        let expected = r#"scenarios: error: invalid value for --exclude
+scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+"#;
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg("--exclude")
+            .arg(OsString::from_bytes(b"\xfa"))
+            .output();
+        assert_eq!(expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_print() {
+        let expected = r#"scenarios: error: invalid value for --print
+scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+"#;
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg("--print")
+            .arg(OsString::from_bytes(b"\xfa"))
+            .output();
+        assert_eq!(expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_print0() {
+        let expected = r#"scenarios: error: invalid value for --print0
+scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+"#;
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg("--print0")
+            .arg(OsString::from_bytes(b"\xfa"))
+            .output();
+        assert_eq!(expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_command_line() {
+        // Here we check that a non-UTF8 command does not cause a panic.
+        let expected_first_line = "scenarios: error: could not start scenario \"A1\"";
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg("--")
+            .arg(OsString::from_bytes(b"ec\xfao"))
+            .output();
+        let first_line = output.stderr.lines().next().unwrap();
+        assert_eq!(expected_first_line, first_line);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_jobs_no_unicode() {
+        let expected = r#"scenarios: error: invalid value for --jobs
+scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+"#;
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .arg("--jobs")
+            .arg(OsString::from_bytes(b"\xfa"))
+            .args(&["--", "echo"])
+            .output();
+        assert_eq!(expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_jobs_not_a_number() {
+        let expected = r#"scenarios: error: invalid value for --jobs
+scenarios:   -> reason: not a number: "three"
+"#;
+        let output = Runner::new()
+            .scenario_file("good_a.ini")
+            .args(&["--jobs", "three", "--", "echo"])
+            .output();
+        assert_eq!(expected, &output.stderr);
+        assert_eq!("", &output.stdout);
         assert!(!output.status.success());
     }
 }

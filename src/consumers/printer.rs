@@ -20,22 +20,27 @@ use scenarios::Scenario;
 /// The string pattern that gets replaced in `Printer::template`.
 const PATTERN: &'static str = "{}";
 
-/// A `Consumer` of `Scenario`s that prints their name to `stdout`.
+/// A consumer of `Scenario`s that prints their names to `stdout`.
+///
+/// This is a very simple run-time formatter. It takes a `template`
+/// string, replaces all occurrences of `"{}"` in it with a given
+/// string, then appends a `terminator` string to the result. No
+/// validation nor sanitation takes place.
 #[derive(Debug)]
-pub struct Printer<'template, 'terminator> {
+pub struct Printer<'tpl, 'trm> {
     /// A string in which `PATTERN` is replaced by the scenario name.
-    template: &'template str,
+    template: &'tpl str,
     /// A string printed after each template.
-    terminator: &'terminator str,
+    terminator: &'trm str,
 }
 
-impl<'template, 'terminator> Printer<'template, 'terminator> {
+impl<'tpl, 'trm> Printer<'tpl, 'trm> {
     /// Creates a new `Printer` with given template and terminator.
     ///
     /// The template is the string in which all occurrences of
-    /// `PATTERN` are replaced by the formatted string. To the result
+    /// `"{}"` are replaced by the formatted string. To the result
     /// of this, the terminator is appended.
-    pub fn new(template: &'template str, terminator: &'terminator str) -> Self {
+    pub fn new(template: &'tpl str, terminator: &'trm str) -> Self {
         Printer { template, terminator }
     }
 
@@ -48,19 +53,23 @@ impl<'template, 'terminator> Printer<'template, 'terminator> {
         Printer::new("", "")
     }
 
+    /// Returns the printer's template string.
     pub fn template(&self) -> &str {
         self.template
     }
 
-    pub fn set_template(&mut self, template: &'template str) {
+    /// Changes the printer's template string.
+    pub fn set_template(&mut self, template: &'tpl str) {
         self.template = template;
     }
 
+    /// Returns the printer's terminator string.
     pub fn terminator(&self) -> &str {
         self.terminator
     }
 
-    pub fn set_terminator(&mut self, terminator: &'terminator str) {
+    /// Changes the printer's terminator string.
+    pub fn set_terminator(&mut self, terminator: &'trm str) {
         self.terminator = terminator;
     }
 
@@ -74,8 +83,8 @@ impl<'template, 'terminator> Printer<'template, 'terminator> {
     /// ```rust
     /// extern crate scenarios
     /// use scenaros::consumers::Printer;
-    /// let p = Printer::new()
-    /// assert_eq!(p.format("hello world"), "hello world\n".to_owned());
+    /// let p = Printer::new();
+    /// assert_eq!(p.format("hello world"), "hello world\n");
     /// ```
     pub fn format(&self, s: &str) -> String {
         let mut result = self.template.replace(PATTERN, s);
@@ -93,8 +102,8 @@ impl<'template, 'terminator> Printer<'template, 'terminator> {
 impl<'a, 'b> Default for Printer<'a, 'b> {
     /// Creates a new `Printer` with default values.
     ///
-    /// The default values are `PATTERN` (i.e. `"{}"`) for `template`
-    /// and a newline (i.e. `"\n"`) for `terminator`.
+    /// The default values are empty braces `"{}"` for the `template`
+    /// and a newline `"\n"` for the `terminator`.
     fn default() -> Self {
         Printer { template: PATTERN, terminator: "\n" }
     }

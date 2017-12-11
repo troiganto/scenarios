@@ -13,6 +13,9 @@
 // permissions and limitations under the License.
 
 
+//! Contains all calls to `clap` so it doesn't clutter `main`.
+
+
 use clap::{self, Arg, ArgGroup, App, AppSettings};
 
 
@@ -80,6 +83,26 @@ pub fn get_app() -> clap::App<'static, 'static> {
                          files are passed, all possible combinations \
                          between them are iterated. Pass '-' to read \
                          from stdin."))
+        .arg(Arg::with_name("choose")
+             .short("c")
+             .long("choose")
+             .takes_value(true)
+             .value_name("SCENARIO NAME")
+             .help("Only process scenarios with the given name.")
+             .long_help("Ignore all scenarios except the one with the \
+                         given name. SCENARIO NAME may be a \
+                         shell-like glob pattern to choose more than \
+                         one scenario at once."))
+        .arg(Arg::with_name("exclude")
+             .short("x")
+             .long("exclude")
+             .takes_value(true)
+             .value_name("SCENARIO NAME")
+             .conflicts_with("choose")
+             .help("Ignore scenarios with the given name.")
+             .long_help("Ignore all scenarios with the given name. As \
+                         for --choose, SCENARIO NAME may be a \
+                         shell-like glob pattern."))
         // Only one of --print, --print0, and <command> may be passed.
         .group(ArgGroup::with_name("output")
             .args(&["print", "print0", "command_line"])

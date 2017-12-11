@@ -16,7 +16,7 @@
 #![allow(dead_code)]
 
 use std::env;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output};
 
@@ -120,6 +120,10 @@ impl Runner {
 }
 
 
+/// The type returned by `Runner::output()`.
+///
+/// This type is a replacement of `std::process::Output` that
+/// automatically converts stdout and stderr to `String`.
 pub struct RunResult {
     pub status: ExitStatus,
     pub stdout: String,
@@ -135,6 +139,35 @@ impl RunResult {
         }
     }
 }
+
+
+/// Extension trait for `OsString` providing conversion from `&[u8]`.
+pub trait OsStringExt {
+    fn from_bytes(bytes: &[u8]) -> Self;
+}
+
+impl OsStringExt for OsString {
+    #[cfg(unix)]
+    fn from_bytes(bytes: &[u8]) -> OsString {
+        use std::os::unix::ffi::OsStringExt;
+
+        OsString::from_vec(bytes.to_owned())
+    }
+
+    #[cfg(windows)]
+    fn from_bytes(bytes: &[u8]) -> OsString {
+        use std::os::windows::ffi::OsStringExt;
+
+        let wide = bytes.map(|b| b as u16).collect::<Vec<u16>>();
+        OsString::from_wide(&wide)
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn from_bytes(bytes: &[u8]) -> OsString {
+        unsafe { OsString::from(String::from_utf8_unchecked(bytes.to_owned())) }
+    }
+}
+
 
 fn guess_tests_dir_path() -> PathBuf {
     // We pray to Ferris that the current working directory always is the

@@ -291,13 +291,16 @@ where
 }
 
 
-/// Errors caused during building a scenario.
+/// Errors that may occur when building a scenario.
 #[derive(Debug, Fail)]
 pub enum ScenarioError {
+    /// The scenario name is illegal.
     #[fail(display = "invalid scenario name: \"{}\"", _0)]
     InvalidName(String),
+    /// The variable name is illegal.
     #[fail(display = "invalid variable name: \"{}\"", _0)]
     InvalidVariable(String),
+    /// The variable name has already been used..
     #[fail(display = "variable already defined: \"{}\"", _0)]
     DuplicateVariable(String),
 }
