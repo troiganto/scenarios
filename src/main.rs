@@ -139,13 +139,19 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 
 /// Creates a `NameFilter` from `args`.
 fn name_filter_from_args(args: &clap::ArgMatches) -> Result<scenarios::NameFilter, Error> {
-    let filter = if let Some(pattern) = args.value_of("choose") {
-        scenarios::NameFilter::new_whitelist()
-            .add_pattern(pattern)
+    let filter = if let Some(pattern) = args.value_of_os("choose") {
+        let filter = scenarios::NameFilter::new_whitelist();
+        pattern
+            .try_to_str()
+            .map_err(Error::from)
+            .and_then(|p| filter.add_pattern(p))
             .context("invalid value for --choose")?
-    } else if let Some(pattern) = args.value_of("exclude") {
-        scenarios::NameFilter::new_blacklist()
-            .add_pattern(pattern)
+    } else if let Some(pattern) = args.value_of_os("exclude") {
+        let filter = scenarios::NameFilter::new_blacklist();
+        pattern
+            .try_to_str()
+            .map_err(Error::from)
+            .and_then(|p| filter.add_pattern(p))
             .context("invalid value for --exclude")?
     } else {
         scenarios::NameFilter::default()
