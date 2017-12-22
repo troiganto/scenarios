@@ -186,3 +186,10 @@ A small selection of additional things which make `scenarios` more usable:
 
 - To use `scenarios` in conjunction with `xargs`, you can use the option `--print0`. With it, the
   scenario names are separated by `NUL` instead of end-of-line characters.
+
+- The `--choose` parameter allows you to only a single scenario combination out of a long list that
+  `scenarios` would usually produce. This is useful if there is a bug in your setup and you just
+  want to do a quick run to find it.
+
+- Similarly, the `--exclude` parameter allows you to skip a single scenario that you are not
+  interested in.
