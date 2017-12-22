@@ -20,20 +20,25 @@ use failure::{Error, ResultExt};
 use super::Scenario;
 
 
-/// Type that allows filtering scenarios based on patterns.
+/// Type that allows filtering scenarios based on their names.
 ///
-/// The name filter has two `Mode`s that it may run in:
+/// The name filter has two [`Mode`]s that it may run in:
 ///
-/// - `Mode::ChooseMatching`: a scenario is allowed to pass if its name
+/// - [`ChooseMatching`]: a scenario is allowed to pass if its name
 ///   matches the pattern given to the filter. If the filter has no
 ///   pattern, *no* scenarios are excluded.
-/// - `Mode::IgnoreMatching`: a scenario is allowed to pass if its name
+/// - [`IgnoreMatching`]: a scenario is allowed to pass if its name
 ///   does *not* match the pattern given to the filter. If the filter
 ///   has no pattern, *all* scenarios are allowed.
 ///
 /// The pattern may be any shell-like glob pattern, in which the
 /// patterns `"*"`, `"?"`, `"[...]"` and `"[^...]"` are interpreted
-/// specially. (See the `glob` crate for more information.)
+/// specially. (See the [`glob`] crate for more information.)
+///
+/// [`Mode`]: ./enum.FilterMode.html
+/// [`ChooseMatching`]: ./enum.FilterMode.html
+/// [`IgnoreMatching`]: ./enum.FilterMode.html
+/// [`glob`]: ../../glob/index.html
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NameFilter {
     mode: Mode,
@@ -58,8 +63,10 @@ impl NameFilter {
 
     /// Returns `true` if the filter allows this scenario.
     ///
-    /// Depending on the filter's `Mode`, the scenario's name must
+    /// Depending on the filter's [`Mode`], the scenario's name must
     /// either match or *not* match the filter's pattern to be allowed.
+    ///
+    /// [`Mode`]: ./enum.FilterMode.html
     pub fn allows(&self, scenario: &Scenario) -> bool {
         let options = MatchOptions {
             case_sensitive: true,
@@ -76,20 +83,26 @@ impl NameFilter {
         }
     }
 
-    /// Returns the filter's `Mode`.
+    /// Returns the filter's [`Mode`].
+    ///
+    /// [`Mode`]: ./enum.FilterMode.html
     pub fn mode(&self) -> Mode {
         self.mode
     }
 
-    /// Sets the filter's `Mode`.
+    /// Sets the filter's [`Mode`].
+    ///
+    /// [`Mode`]: ./enum.FilterMode.html
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
     }
 
     /// Adds a pattern to this filter.
     ///
-    /// In contrast to `set_pattern`, this takes and returns `self`, so
-    /// it may be used in a method-call chain.
+    /// In contrast to [`set_pattern()`], this takes and returns
+    /// `self`, so it may be used in a method-call chain.
+    ///
+    /// [`set_pattern()`]: #method.set_pattern
     pub fn add_pattern(mut self, pattern: &str) -> Result<Self, Error> {
         self.set_pattern(pattern)?;
         Ok(self)
@@ -111,12 +124,16 @@ impl NameFilter {
 }
 
 
-/// Enum type that specifies the mode in which a `NameFilter` may run.
+/// Enum type that specifies the mode in which a [`NameFilter`] runs.
 ///
 /// The default value is `IgnoreMatching`.
+///
+/// [`NameFilter`]: ./struct.NameFilter.html
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
+    /// Only scenarios with matching name are allowed.
     ChooseMatching,
+    /// Only scenarios with non-matching name are allowed.
     IgnoreMatching,
 }
 

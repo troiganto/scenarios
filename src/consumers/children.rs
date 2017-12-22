@@ -24,36 +24,45 @@ use super::tokens::{PoolToken, TokenStock};
 
 /// Wrapper type combining `std::process::Command` with a name.
 ///
-/// This type is returned by `CommandLine` and represents a process
-/// that is ready to start. Starting it requires a `PoolToken`,
+/// This type is returned by [`CommandLine`] and represents a process
+/// that is ready to start. Starting it requires a [`PoolToken`],
 /// however, to limit the number of processes that can run in parallel.
 ///
-/// Note that the fields `name` and `program` are only used to provide
-/// meaningful error messages if something goes wrong.
+/// Note that the names associated with this child are only used to
+/// provide meaningful error messages if something goes wrong.
+///
+/// [`CommandLine`]: ./struct.CommandLine.html
+/// [`PoolToken`]: ./struct.PoolToken.html
 #[derive(Debug)]
 pub struct PreparedChild<'a> {
-    /// The name of the corresponding scenario.
     name: String,
-    /// The name of the running scenario.
     program: &'a OsStr,
     command: Command,
 }
 
 impl<'a> PreparedChild<'a> {
-    /// Creates a new `PreparedChild`.
+    /// Creates a new prepared child.
+    ///
+    /// `name` is the name of the corresponding scenario, `program` is
+    /// the name of the program to run. Both names are only used to
+    /// build error messages.
     pub fn new(name: String, program: &'a OsStr, command: Command) -> Self {
         PreparedChild { name, program, command }
     }
 
-    /// Turns the `PreparedChild` into a `RunningChild`.
+    /// Turns `self` into a [`RunningChild`].
     ///
-    /// This starts the process wrapped by `self` and combines the
-    /// running process with the passed token into a `RunningChild`.
+    /// This starts a process from the wrapped `Command` and combines
+    /// the running process with the passed token into a
+    /// [`RunningChild`].
     ///
     /// # Errors
     /// Spawning a process can fail. In such a case, this function
     /// returns both the error that occurred, and the passed
-    /// `PoolToken`. This ensures that no token is lost.
+    /// [`PoolToken`]. This ensures that no token is lost.
+    ///
+    /// [`RunningChild`]: ./struct.RunningChild.html
+    /// [`PoolToken`]: ./struct.PoolToken.html
     pub fn spawn(mut self, token: PoolToken) -> Result<RunningChild, (Error, PoolToken)> {
         let name = self.name;
         let program = self.program;
@@ -73,11 +82,14 @@ impl<'a> PreparedChild<'a> {
         }
     }
 
-    /// Like `spawn`, but returns the `PoolToken` in case of errors.
+    /// Like `spawn`, but may return the token to the [`TokenStock`].
     ///
-    /// If this function fails, it returns `token` to the given `stock`
-    /// instead of returning it by-value. This allows this function to
-    /// return a proper `Result` whose `Err` implements `Error`.
+    /// If this function fails, it returns the given [`PoolToken`] to
+    /// the given [`TokenStock`] instead of returning it by-value. This
+    /// gives this function a simpler return type.
+    ///
+    /// [`TokenStock`]: ./struct.TokenStock.html
+    /// [`PoolToken`]: ./struct.PoolToken.html
     pub fn spawn_or_return_token(
         self,
         token: PoolToken,
@@ -96,9 +108,10 @@ impl<'a> PreparedChild<'a> {
 
 /// Wrapper type combining `std::process::Child` with name and token.
 ///
-/// This type is returned by `PreparedChild::spawn()` and represents a
-/// process that is currently running. The correct process is to wait
-/// on it and then call `RunningChild::finish()`.
+/// This type is returned by [`PreparedChild::spawn()`] and represents
+/// a process that is currently running.
+///
+/// [`PreparedChild::spawn()`]: ./struct.PreparedChild.html#method.spawn
 #[derive(Debug)]
 pub struct RunningChild {
     name: String,
@@ -114,7 +127,9 @@ impl RunningChild {
     /// still running, this returns `Ok(false)`.
     ///
     /// # Errors
-    /// Waiting can theoretically fail.
+    /// Waiting can theoretically fail. It is not clear under which
+    /// circumstances this can happen and what the correct procedure
+    /// would be.
     pub fn is_finished(&mut self) -> Result<bool, Error> {
         let status = self.child
             .try_wait()
@@ -123,13 +138,16 @@ impl RunningChild {
         Ok(status.is_some())
     }
 
-    /// Waits for the `RunningChild` to turn into a `FinishedChild`.
+    /// Waits for `self` to turn into a [`FinishedChild`].
     ///
-    /// This also returns the `PoolToken` that the child had.
+    /// This also returns the [`PoolToken`] that the child had.
     ///
     /// # Errors
-    /// Waiting can theoretically fail. The `PoolToken` is returned in
-    /// any case.
+    /// Waiting can theoretically fail. The [`PoolToken`] is returned
+    /// in any case.
+    ///
+    /// [`FinishedChild`]: ./struct.FinishedChild.html
+    /// [`PoolToken`]: ./struct.PoolToken.html
     pub fn finish(mut self) -> (Result<FinishedChild, Error>, PoolToken) {
         let result = self.child
             .wait()
@@ -145,9 +163,12 @@ impl RunningChild {
 
 /// Wrapper type combining `std::process::ExitStatus` with a name.
 ///
-/// This type is returned by `RunningChild::finish` and represents a
-/// process that has finished running. It can be turned into a `Result`
-/// to check whether the child process had exited successfully.
+/// This type is returned by [`RunningChild::finish()`] and represents
+/// a process that has finished running. It can be turned into a
+/// `Result` to check whether the child process had exited
+/// successfully.
+///
+/// [`RunningChild::finish()`]: ./struct.RunningChild.html#method.finish
 #[derive(Debug)]
 pub struct FinishedChild {
     name: String,
@@ -158,11 +179,7 @@ impl FinishedChild {
     /// Checks whether the child process had exited successfully.
     ///
     /// This inspects the wrapped `ExitStatus` and returns `Ok(())` if
-    /// the child exited sucessfully.
-    ///
-    /// # Errors
-    /// If the child exited with a non-zero exit status or through a
-    /// signal, this returns an error of kind `ChildFailed`.
+    /// the child exited sucessfully. Otherwise, an error is returned.
     pub fn into_result(self) -> Result<(), Error> {
         if self.status.success() {
             Ok(())
@@ -199,9 +216,9 @@ pub struct SpawnFailed {
 
 /// Waiting for a child process's completion failed.
 ///
-/// `Child::wait()` can fail for any number of platform-dependent
-/// reasons. We do the conservative thing and assume the child lost as
-/// soon as `wait()` errors even once.
+/// `std::process::Child::wait()` can fail for any number of
+/// platform-dependent reasons. We do the conservative thing and assume
+/// the child lost as soon as `wait()` errors even once.
 #[derive(Debug, Fail)]
 #[fail(display = "failed to wait for job to finish")]
 pub struct WaitFailed;

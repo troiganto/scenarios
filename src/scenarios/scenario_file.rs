@@ -29,15 +29,16 @@ use super::inputline::InputLine;
 /// Type that represents a scenario file.
 ///
 /// Creating an instance of this type means to open a file or other
-/// `Read`able object and read a sequence of `InputLine`s from it. When
-/// producing scenarios from this file, these input lines are parsed
-/// and turned into scenarios.
+/// `Read`able object and read a sequence of input lines from it. When
+/// producing [`Scenario`]s from this file, these input lines are
+/// parsed and turned into [`Scenario`]s.
 ///
-/// Scenarios borror from this type. Its prime purpose is to serve as
-/// the owner of all the strings `Scenario` uses. This separation
-/// allows us to use a `HashMap<&str, &str>` in `Scenario`, instead of
-/// a `HashMap<String, String>`. This, in turn, allows us evade many
-/// pointless copies.
+/// [`Scenario`]s borrow from this type. Its prime purpose is to serve
+/// as the owner of all the strings [`Scenario`] uses. This separation
+/// allows us to avoid a lot of `String` copies, operating on `str`
+/// slices instead.
+///
+/// [`Scenario`]: ./struct.Scenario.html
 #[derive(Debug)]
 pub struct ScenarioFile<'a> {
     filename: &'a Path,
@@ -47,8 +48,9 @@ pub struct ScenarioFile<'a> {
 impl<'a> ScenarioFile<'a> {
     /// Takes a command-line argument and reads a file from it.
     ///
-    /// If `path` equals `"-"`, this reads scenarios from stdin.
-    /// Otherwise, it reads from the regular file located at `path`.
+    /// If `path` equals `"-"`, this reads scenarios from standard
+    /// input. Otherwise, it reads from the regular file located at
+    /// `path`.
     ///
     /// If `is_strict` is `true`, this function checks after reading
     /// whether any two scenarios in it have the same name. If they do,
@@ -56,16 +58,19 @@ impl<'a> ScenarioFile<'a> {
     /// check is not performed.
     ///
     /// Note that this call reads all lines in the file into memory,
-    /// but does not create any `Scenario`s yet. Scenarios can be
-    /// created via `iter()`.
+    /// but does not create any [`Scenario`]s yet. This only happens
+    /// when iterating over the file.
     ///
     /// # Errors
     /// This function may fail for any of the following reasons:
+    ///
     /// 1. The file located at `path` cannot be opened.
     /// 2. Reading from the file fails at any point.
     /// 3. The file breaks the syntax of scenario files.
     /// 4. The file defines two scenarios with the same name. (only if
-    /// `is_strict==true`).
+    /// `is_strict` is `true`).
+    ///
+    /// [`Scenario`]: ./struct.Scenario.html
     pub fn from_cl_arg(path: &OsStr, is_strict: bool) -> Result<ScenarioFile, Error> {
         let stdin = io::stdin();
         if path == Path::new("-") {
@@ -151,13 +156,15 @@ impl<'a> ScenarioFile<'a> {
 
     /// Returns the name of the file that was read.
     ///
-    /// For stdin, this is `"<stdin>"`. For any regular file, this is
-    /// the path to it.
+    /// For standard input, this is `"<stdin>"`. For any regular file,
+    /// this is the path to it.
     pub fn filename(&self) -> &Path {
         self.filename
     }
 
-    /// Returns an iterator that creates scenarios from the file.
+    /// Returns an iterator that creates [`Scenario`]s from the file.
+    ///
+    /// [`Scenario`]: ./struct.Scenario.html
     pub fn iter(&self) -> ScenariosIter {
         ScenariosIter::new(self.filename, &self.lines)
     }
@@ -173,7 +180,10 @@ impl<'a, 'b: 'a> IntoIterator for &'a ScenarioFile<'b> {
 }
 
 
-/// An iterator that reads `Scenario`s from a `ScenarioFile`.
+/// An iterator that reads [`Scenario`]s from a [`ScenarioFile`].
+///
+/// [`Scenario`]: ./struct.Scenario.html
+/// [`ScenarioFile`]: ./struct.ScenarioFile.html
 #[derive(Debug, Clone)]
 pub struct ScenariosIter<'a> {
     location: ErrorLocation<&'a Path>,
@@ -191,11 +201,15 @@ impl<'a> ScenariosIter<'a> {
     ///
     /// This function returns the scenario belonging to the current
     /// header line. It is private and merely a convenience helper for
-    /// `next()`.
+    /// [`next()`].
     ///
     /// # Errors
-    /// This may fail either with a `ScenarioError` or an
-    /// `UnexpectedVarDef`.
+    /// This may fail either with a [`ScenarioError`] or an
+    /// [`UnexpectedVarDef`].
+    ///
+    /// [`next()`]: #method.next
+    /// [`ScenarioError`]: ./enum.ScenarioError.html
+    /// [`UnexpectedVarDef`]: ./struct.UnexpectedVarDef.html
     fn next_scenario(&mut self) -> Result<Option<Scenario<'a>>, Error> {
         let mut scenario = match self.next_header_line()? {
             Some(line) => Scenario::new(line)?,
@@ -211,7 +225,9 @@ impl<'a> ScenariosIter<'a> {
     ///
     /// # Errors
     /// If a definition line is found, the line counter is still
-    /// incremented, but a `UnexpectedVarDef` is returned.
+    /// incremented, but a [`UnexpectedVarDef`] is returned.
+    ///
+    /// [`UnexpectedVarDef`]: ./struct.UnexpectedVarDef.html
     fn next_header_line(&mut self) -> Result<Option<&'a str>, UnexpectedVarDef> {
         while let Some(line) = self.lines.get(self.location.lineno) {
             self.location.lineno += 1;
@@ -226,10 +242,10 @@ impl<'a> ScenariosIter<'a> {
 
     /// Fetches the next definition line.
     ///
-    /// Comment lines are skipped over. If a header line is
-    /// encountered, `None` is returned and the line counter is *not*
-    /// incremented. In other words, calling `next_line()` after this
-    /// method will give eitehr `None` or `Some(InputLine::Header)`.
+    /// Comment lines are skipped over. This returns `None` if the
+    /// end-of-file is reached or a header line is found. (The header
+    /// line is *not* extracted!) Otherwise, the split variable
+    /// definition is returned.
     fn next_definition_line(&mut self) -> Option<(&'a str, &'a str)> {
         while let Some(line) = self.lines.get(self.location.lineno) {
             if line.is_header() {
@@ -255,9 +271,8 @@ impl<'a> Iterator for ScenariosIter<'a> {
     ///
     /// This may fail if the scenario's definition is bad:
     ///
-    /// - The scenario cannot be build (see `ScenarioError`);
-    /// - a variable was defined outside of any scenario (see
-    ///   `UnexpectedVarDef`).
+    /// - The scenario cannot be build, or
+    /// - a variable was defined outside of any scenario.
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_scenario()
                   .with_context(|_| self.location.to_owned()) {

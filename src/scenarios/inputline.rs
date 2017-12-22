@@ -29,8 +29,9 @@ use std::str::FromStr;
 /// 3. if it contains at least one equals sign, it is a definition
 ///    line.
 ///
-/// Anything else is considered a syntax error. Use `InputLine::kind()`
-/// to query which of these kinds an `InputLine` is.
+/// Anything else is considered a syntax error. Use the [`kind()`]
+/// method to query which of these kinds an input line is classified
+/// as.
 ///
 /// # Example
 ///
@@ -49,6 +50,8 @@ use std::str::FromStr;
 /// `String`, but as `Box<str>`. This shaves off the capacity field of
 /// regular `String`s and thus reduces the types stack size by one
 /// `usize`.
+///
+/// [`kind()`]: #method.kind
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct InputLine {
     /// The string content of the line.
@@ -64,8 +67,8 @@ pub struct InputLine {
     /// definition lines, it is non-zero. It is the index of the equals
     /// sign inside `content` that separates variable name and value.
     ///
-    /// Note that header lines may very well contain equals signs. The
-    /// `eq_pos` field will be zero for them nonetheless.
+    /// Note that header lines may very well contain equals signs.
+    /// This field will be zero for them regardless.
     eq_pos: usize,
 }
 
@@ -112,7 +115,7 @@ impl InputLine {
         self.content.is_some() && self.eq_pos > 0
     }
 
-    /// Returns what kind of `InputLine` this string got parsed as.
+    /// Returns what kind of input line that this string got parsed as.
     pub fn kind(&self) -> InputLineKind {
         if self.eq_pos > 0 {
             InputLineKind::Definition
@@ -167,16 +170,21 @@ impl InputLine {
 }
 
 
-/// The kinds of `InputLine`s that exist.
+/// The kinds of [`InputLine`]s that exist.
+///
+/// [`InputLine`]: ./struct.InputLine.html
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum InputLineKind {
+    /// A header line.
     Header,
+    /// A variable definition.
     Definition,
+    /// A comment or empty line.
     Comment,
 }
 
 
-/// Checks if a line is blank or a comment.
+/// Checks if a line is empty or a comment.
 fn is_comment(s: &str) -> bool {
     s.is_empty() || s.starts_with('#')
 }
@@ -223,7 +231,9 @@ fn try_parse_definition(s: &str) -> Option<Result<usize, SyntaxError>> {
 
 
 /// Error caused by a line not adhering to the syntax described in
-/// the documentation for `InputLine`.
+/// the documentation for [`InputLine`].
+///
+/// [`InputLine`]: ./struct.InputLine.html
 #[derive(Debug, Fail)]
 pub enum SyntaxError {
     #[fail(display = "no closing bracket \"]\" in header line: \"{}\"", _0)]

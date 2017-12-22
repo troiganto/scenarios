@@ -21,25 +21,31 @@ use super::children::PreparedChild;
 use super::children::FinishedChild;
 
 
-/// The interface used by `loop_in_process_pool()` for callbacks.
+/// The interface used by [`loop_in_process_pool()`] for callbacks.
 ///
-/// In order to call `loop_in_process_pool()`, a type must be passed
+/// In order to call [`loop_in_process_pool()`], a type must be passed
 /// that implements this trait. This trait is then used for various
 /// callbacks during the actual loop.
 ///
 /// By returning an error, the implementor is able to abort the loop at
-/// any time. Nonetheless, all child processes are always waited for.
+/// any time. Nonetheless, all running child processes are always
+/// waited for.
+///
+/// [`loop_in_process_pool()`]: ./fn.loop_in_process_pool.html
 pub trait LoopDriver<Item> {
     /// Returns the number of children allowed to run in parallel.
     fn max_num_of_children(&self) -> usize;
 
-    /// Takes some item and creates a `PreparedChild` from it.
+    /// Takes some item and creates a [`PreparedChild`] from it.
     ///
     /// Beside the loop driver, an iterator is passed to the function
-    /// `loop_in_process_pool()`. It is the task of this function to
+    /// [`loop_in_process_pool()`]. It is the task of this function to
     /// convert the items yielded by the iterator to
-    /// `PreparedChild`ren. If this isn't possible, an error should be
-    /// returned, which aborts the loop.
+    /// [`PreparedChild`]ren. If this isn't possible, an error should
+    /// be returned, which aborts the loop.
+    ///
+    /// [`PreparedChild`]: ./struct.PreparedChild.html
+    /// [`loop_in_process_pool()`]: ./fn.loop_in_process_pool.html
     fn prepare_child(&self, item: Item) -> Result<PreparedChild, Error>;
 
     /// Handles any child processes that have terminated.
@@ -53,15 +59,18 @@ pub trait LoopDriver<Item> {
     /// Observes whether the loop terminated successfully.
     ///
     /// This function is called if the loop was exited not through
-    /// exhaustion of the iterator passed to `loop_in_process_pool` but
-    /// because of any error.
+    /// exhaustion of the iterator that was passed to
+    /// [`loop_in_process_pool()`] but because of any error.
     ///
-    /// If `error` should be the over-all result of the call to
-    /// `loop_in_process_pool()`, the driver must hold onto it and
-    /// return it later from `LoopDriver::on_finish()`.
+    /// If the implementor wants `error` to be the result of
+    /// [`loop_in_process_pool()`], it must hold onto it and return it
+    /// later from [`on_finish()`].
+    ///
+    /// [`loop_in_process_pool()`]: ./fn.loop_in_process_pool.html
+    /// [`on_finish()`]: #tymethod.on_finish
     fn on_loop_failed(&mut self, error: Error);
 
-    /// Like `on_reap()` but called by the clean-up loop.
+    /// Like [`on_reap()`] but called by the clean-up loop.
     ///
     /// This call-back for terminated processes is chosen if an error
     /// has occured and the loop has been aborted. Because an error is
@@ -69,16 +78,21 @@ pub trait LoopDriver<Item> {
     /// another error.
     ///
     /// This function should not panic because that would lead to
-    /// `ProcessPool` being dropped while still containing running
+    /// [`ProcessPool`] being dropped while still containing running
     /// child processes, which would lead to a double panic, which
-    /// terminates the entire program.
+    /// would terminate the entire program.
+    ///
+    /// [`on_reap()`]: #tymethod.on_reap
+    /// [`ProcessPool`]: ./struct.ProcessPool.html
     fn on_cleanup_reap(&mut self, child: Result<FinishedChild, Error>);
 
     /// Wraps up the loop after everything else has run.
     ///
     /// This function determines the result of the over-all call to
-    /// `loop_in_process_pool()`. It gives the driver a chance to e.g.
-    /// pop any errors it has previously pushed out of the way.
+    /// [`loop_in_process_pool()`]. It gives the driver a chance to
+    /// e.g. pop any errors it has previously pushed out of the way.
+    ///
+    /// [`loop_in_process_pool()`]: ./fn.loop_in_process_pool.html
     fn on_finish(self) -> Result<(), Error>;
 }
 
@@ -86,10 +100,9 @@ pub trait LoopDriver<Item> {
 /// Handle items from an iterator, starting a child process for each.
 ///
 /// This goes through the `items` and starts one child process for each
-/// of them. The `PoolToken` mechanism limits the number of processes
-/// that can run at any time.
-///
-/// A `LoopDriver` type is used to drive the loop and answer callbacks.
+/// of them. The [`PoolToken`] mechanism limits the number of processes
+/// that can run at any time. A [`LoopDriver`] type is used to drive
+/// the loop and answer callbacks.
 ///
 /// # Errors
 ///
@@ -101,7 +114,10 @@ pub trait LoopDriver<Item> {
 ///
 /// - spawning a child process fails;
 /// - waiting on a child process fails;
-/// - any one of the calls to `driver` fails.
+/// - any one of the calls to the [`LoopDriver`] fails.
+///
+/// [`PoolToken`]: ./struct.PoolToken.html
+/// [`LoopDriver`]: ./trait.LoopDriver.html
 pub fn loop_in_process_pool<I, D>(items: I, mut driver: D) -> Result<(), Error>
 where
     I: IntoIterator,
@@ -123,14 +139,16 @@ where
 }
 
 
-/// The actual main loop of `loop_in_pool`.
+/// The actual main loop of [`loop_in_process_pool()`].
 ///
 /// If no error occurs, this function waits for all child processes to
 /// terminate. As soon as an error occurs, this function returns.
 /// Cleaning up the pool is left to the caller in that case.
 ///
 /// # Errors
-/// Same as for `loop_in_process_pool()`.
+/// Same as for [`loop_in_process_pool()`].
+///
+/// [`loop_in_process_pool()`]: ./fn.loop_in_process_pool.html
 fn loop_inner<I, D>(
     stock: &mut TokenStock,
     pool: &mut ProcessPool,

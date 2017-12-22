@@ -29,7 +29,9 @@ use super::children::{PreparedChild, ScenarioNotStarted};
 const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
 
 
-/// Customization flags for `CommandLine`.
+/// Customization flags for [`CommandLine`].
+///
+/// [`CommandLine`]: ./struct.CommandLine.html
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     /// Start child processes in a clean environment.
@@ -52,9 +54,8 @@ pub struct Options {
     /// Define a variable "SCENARIOS_NAME".
     ///
     /// If `true`, always define an additional environment variable
-    /// whose name is `"SCENARIOS_NAME"`. This variable contains the
-    /// name of the scenario in which the child process is being
-    /// executed.
+    /// whose name is "SCENARIOS_NAME". This variable contains the name
+    /// of the scenario in which the child process is being executed.
     ///
     /// The default is `true`.
     pub add_scenarios_name: bool,
@@ -62,9 +63,9 @@ pub struct Options {
     ///
     /// If `true`, it is an error to set `add_scenarios_name` to `true`
     /// *and* supply your own environment variable whose name is
-    /// `"SCENARIOS_NAME"`. If this is `false` and `add_scenarios_name`
+    /// "SCENARIOS_NAME". If this is `false` and `add_scenarios_name`
     /// is `true`, such a variable gets silently overwritten. If
-    /// `add_scenarios_name` is `false`, this has option no effect.
+    /// `add_scenarios_name` is `false`, this option has no effect.
     ///
     /// The default is `true`.
     pub is_strict: bool,

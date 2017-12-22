@@ -24,15 +24,18 @@ use super::children::{RunningChild, FinishedChild};
 
 /// A pool of processes which can run concurrently.
 ///
-/// This is basically a vector over `RunningChild`ren that allows you
+/// This is basically a vector over [`RunningChild`]ren that allows you
 /// to easily check any children that have finished running and to
 /// remove them from the pool.
 ///
 /// # Panics
-/// As a safety measure, `ProcessPool` panics if it is dropped while
-/// still containing child processes. You must ensure that the pool is
-/// empty before dropping it -- for example by calling `wait_reap()`
-/// until it returns `None`.
+/// As a safety measure, this type panics if it is dropped while still
+/// containing child processes. You must ensure that the pool is empty
+/// before dropping it – for example by calling [`wait_reap()`] until
+/// it returns `None`.
+///
+/// [`RunningChild`]: ./struct.RunningChild.html
+/// [`wait_reap()`]: #method.wait_reap
 #[derive(Debug, Default)]
 pub struct ProcessPool {
     /// The list of currently running child processes.
@@ -62,22 +65,22 @@ impl ProcessPool {
 
     /// Returns an iterator over all finished child processes.
     ///
-    /// Each call to `FinishedIter::next` removes `Some((child, token))`
-    /// from the pool. If all child processes are still running, the
-    /// call to `next` returns `None`.
+    /// Each call to `FinishedIter::next()` removes
+    /// `Some((child, token))` from the pool. If all child processes
+    /// are still running, the returned iterator is empty.
     pub fn reap(&mut self) -> FinishedIter {
         FinishedIter::new(self)
     }
 
     /// Waits for any child process to finish.
     ///
-    /// This loops around until at least one child process is finished
-    /// and returns that process. This only returns `None` if the pool
-    /// is completely empty.
+    /// This call blocks until at least one child process is finished
+    /// and then returns that process. If the pool is empty, this
+    /// function returns `None`.
     ///
     /// # Errors
     /// If waiting on any child fails, this function returns the error
-    /// that occurred as well as the failed child's token.
+    /// that occurred.
     pub fn wait_reap(&mut self) -> Option<(Result<FinishedChild, Error>, PoolToken)> {
         if self.is_empty() {
             return None;
@@ -94,6 +97,9 @@ impl ProcessPool {
 }
 
 impl Drop for ProcessPool {
+    /// Executes the destructor for this type.
+    ///
+    /// The destructor panics if the pool is not empty.
     fn drop(&mut self) {
         if !self.is_empty() {
             panic!("dropping a non-empty process pool");

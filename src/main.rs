@@ -13,14 +13,14 @@
 // permissions and limitations under the License.
 
 
-//! `Scenarios` is a command-line tool that allows you to execute the
-//! same command multiple times, each time with different environment
+//! The command-line tool [`scenarios`] allows you to execute the same
+//! command multiple times, each time with different environment
 //! variables set. When passed multiple lists of environments,
 //! `scenarios` goes through all possible combinations between them.
 //!
-//! `scenarios` is available on [Github][].
+//! See the README file for more information.
 //!
-//! [Github]: https://github.com/troiganto/scenarios
+//! [`scenarios`]: https://github.com/troiganto/scenarios
 
 
 // This is an application and, as such, contains functionality that is
@@ -54,7 +54,9 @@ use consumers::{PreparedChild, FinishedChild};
 use scenarios::{MergeError, Scenario, ScenarioFile};
 
 
-/// The entry point and wrapper around `try_main`.
+/// The entry point and wrapper around [`try_main()`].
+///
+/// [`try_main()`]: ./fn.try_main.html
 pub fn main() {
     let exit_code: i32 = {
         // Get clapp::App instance.
@@ -94,6 +96,12 @@ pub fn main() {
 /// The actual main function.
 ///
 /// It receives the fully parsed arguments and may return an error.
+/// After building the list of scenarios and depending on the
+/// arguments, this function hands control over either to
+/// [`handle_printing()`] or to [`CommandLineHandler`].
+///
+/// [`handle_printing()`]: ./fn.handle_printing.html
+/// [`CommandLineHandler`]: ./struct.CommandLineHandler.html
 pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
@@ -137,7 +145,9 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 }
 
 
-/// Creates a `NameFilter` from `args`.
+/// Creates a [`NameFilter`] from `args`.
+///
+/// [`NameFilter`]: ./scenarios/struct.NameFilter.html
 fn name_filter_from_args(args: &clap::ArgMatches) -> Result<scenarios::NameFilter, Error> {
     let filter = if let Some(pattern) = args.value_of_os("choose") {
         let filter = scenarios::NameFilter::new_whitelist();
@@ -192,6 +202,10 @@ where
 
 
 /// Helper struct that breaks up the task of executing a command line.
+///
+/// It is used as a loop driver for [`loop_in_process_pool()`].
+///
+/// [`loop_in_process_pool()`]: ./consumers/fn.loop_in_process_pool.html
 pub struct CommandLineHandler<'a> {
     /// Flag read from --keep-going.
     keep_going: bool,
@@ -226,7 +240,9 @@ impl<'a> CommandLineHandler<'a> {
         Ok(handler)
     }
 
-    /// Creates a `CommandLine` from `args`.
+    /// Creates a [`CommandLine`] from `args`.
+    ///
+    /// [`CommandLine`]: ./consumers/struct.CommandLine.html
     fn command_line_from_args(args: &'a clap::ArgMatches) -> consumers::CommandLine<&'a OsStr> {
         let options = consumers::CommandLineOptions {
             is_strict: !args.is_present("lax"),
@@ -309,16 +325,24 @@ impl<'a, 's> consumers::LoopDriver<Result<Scenario<'s>, MergeError>> for Command
 }
 
 
+/// Dummy error that signals that *some* thing went wrong.
+///
+/// Because [`CommandLineHandler`] already reports errors, we use this
+/// dummy error to avoid reporting the same error twice.
+///
+/// [`CommandLineHandler`]: ./struct.CommandLineHandler.html
 #[derive(Debug, Fail)]
 #[fail(display = "not all scenarios terminated successfully")]
 pub struct SomeScenariosFailed;
 
 
+/// Error that signals that no scenario files were given.
 #[derive(Debug, Fail)]
 #[fail(display = "no scenarios provided")]
 pub struct NoScenarios;
 
 
+/// Error that signals that a number could not be parsed.
 #[derive(Debug, Fail)]
 #[fail(display = "not a number: {:?}", _0)]
 pub struct NotANumber(String);

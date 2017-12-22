@@ -13,13 +13,13 @@
 // permissions and limitations under the License.
 
 
-//! Provides the method `try_to_str` on `OsStr` for nicer conversion.
+//! Provides the method `OsStr::try_to_str()`.
 
 
 use std::ffi::{OsStr, OsString};
 
 
-/// Extension trait to provide `try_to_str()` on `OsStr`.
+/// Extension trait on `OsStr`.
 pub trait OsStrExt {
     /// Tries to get a `&str` slice if the `OsStr` is valid Unicode.
     ///
@@ -35,7 +35,9 @@ impl OsStrExt for OsStr {
 }
 
 
-/// The error type of `OsStrExt::try_to_str()`.
+/// The error type of [`OsStrExt::try_to_str()`].
+///
+/// [`OsStrExt::try_to_str()`]: ./trait.OsStrExt.html#tymethod.try_to_str
 #[derive(Debug, Fail)]
 #[fail(display = "contains invalid UTF-8 character: {:?}", _0)]
 pub struct NotUtf8(OsString);
