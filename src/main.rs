@@ -13,14 +13,14 @@
 // permissions and limitations under the License.
 
 
-//! The command-line tool `scenarios` allows you to execute the same
+//! The command-line tool [`scenarios`] allows you to execute the same
 //! command multiple times, each time with different environment
 //! variables set. When passed multiple lists of environments,
 //! `scenarios` goes through all possible combinations between them.
 //!
-//! `scenarios` is available on [Github].
+//! See the README file for more information.
 //!
-//! [Github]: https://github.com/troiganto/scenarios
+//! [`scenarios`]: https://github.com/troiganto/scenarios
 
 
 // This is an application and, as such, contains functionality that is
