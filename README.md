@@ -31,7 +31,7 @@ be distributed via [crates.io][] and pre-compiled binaries.
 
 The general pattern of `scenarios`'s command line is:
 
-```
+```shell
 scenarios [OPTIONS] <scenario files...> -- <command line>
 ```
 
