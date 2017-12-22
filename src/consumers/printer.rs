@@ -20,12 +20,14 @@ use scenarios::Scenario;
 /// The string pattern that gets replaced in `Printer::template`.
 const PATTERN: &'static str = "{}";
 
-/// A consumer of `Scenario`s that prints their names to `stdout`.
+/// A consumer of [`Scenario`]s that prints their names to stdout.
 ///
-/// This is a very simple run-time formatter. It takes a `template`
+/// This is a very simple run-time formatter. It takes a template
 /// string, replaces all occurrences of `"{}"` in it with a given
-/// string, then appends a `terminator` string to the result. No
+/// string, then appends a terminator string to the result. No
 /// validation nor sanitation takes place.
+///
+/// [`Scenario`]: ../scenarios/struct.Scenario.html
 #[derive(Debug)]
 pub struct Printer<'tpl, 'trm> {
     /// A string in which `PATTERN` is replaced by the scenario name.
@@ -38,13 +40,13 @@ impl<'tpl, 'trm> Printer<'tpl, 'trm> {
     /// Creates a new `Printer` with given template and terminator.
     ///
     /// The template is the string in which all occurrences of
-    /// `"{}"` are replaced by the formatted string. To the result
-    /// of this, the terminator is appended.
+    /// `"{}"` are replaced by the formatted string. The terminator is
+    /// the string that is appended to the template afterwards.
     pub fn new(template: &'tpl str, terminator: &'trm str) -> Self {
         Printer { template, terminator }
     }
 
-    /// Creates a new `Printer` that doesn't print anything.
+    /// Creates a new printer that doesn't print anything.
     ///
     /// The returned printer has an empty template and an empty
     /// terminator. This is mostly in cases you want to set these
@@ -75,8 +77,8 @@ impl<'tpl, 'trm> Printer<'tpl, 'trm> {
 
     /// Applies the printer to a string.
     ///
-    /// This inserts `s` in `template` and appends `terminator` to the
-    /// result.
+    /// This inserts the given string into the template and appends the
+    /// terminator to the result.
     ///
     /// # Examples
     ///

@@ -15,9 +15,12 @@
 
 //! Contains all scenario-related functionality.
 //!
-//! This contains, most importantly, the `Scenario` type, as well as
-//! the `ScenarioFile` type, which allows reading scenarios from text
+//! This contains, most importantly, the [`Scenario`] type, as well as
+//! the [`ScenarioFile`] type, which allows reading scenarios from text
 //! files.
+//!
+//! [`Scenario`]: ./struct.ScenarioFile.html
+//! [`ScenarioFile`]: ./struct.ScenarioFile.html
 
 
 mod inputline;

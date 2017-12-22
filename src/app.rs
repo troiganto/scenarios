@@ -13,12 +13,15 @@
 // permissions and limitations under the License.
 
 
-//! Contains all calls to `clap` so it doesn't clutter `main`.
+//! Contains all calls to `clap` so it doesn't clutter `main()`.
 
 
 use clap::{self, Arg, ArgGroup, App, AppSettings};
 
 
+/// Returns an [`App`] instance.
+///
+/// [`App`]: ../../clap/struct.App.html
 pub fn get_app() -> clap::App<'static, 'static> {
     App::new(crate_name!())
         .version(crate_version!())
@@ -191,10 +194,12 @@ pub fn get_app() -> clap::App<'static, 'static> {
 }
 
 
+/// Prints the information given by the `-h` argument.
 pub fn print_short_help(app: clap::App) {
     app.after_help("").print_help().unwrap();
 }
 
+/// Prints the information given by the `--help` argument.
 pub fn print_long_help(app: clap::App) {
     app.after_help(LONG_EXPLANATION)
         .print_long_help()

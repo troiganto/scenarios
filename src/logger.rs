@@ -25,8 +25,9 @@
 //! - does not need multiple drains
 //! - does not need to read config files.
 //!
-//! All we are interested in is printing to `stderr` unless a `quiet`
-//! flag is set. Should be simple enough to roll out on our own!
+//! All we are interested in is printing to standard error unless a
+//! `quiet` flag is set. Should be simple enough to roll out on our
+//! own!
 
 use std::io;
 use std::io::Write;
@@ -36,14 +37,16 @@ use failure::Error;
 
 
 pub struct Logger<'a> {
-    /// The name of the application. Usually set to `crate_name!()`.
+    /// The name of the application.
     name: &'a str,
     /// If set to `true`, suppresses all output.
     quiet: bool,
 }
 
 impl Logger<'static> {
-    /// Creates a logger with the default name `crate_name!()`.
+    /// Creates a logger with the default name [`crate_name!`].
+    ///
+    /// [`crate_name!`]: ../../clap/macro.crate_name.html
     pub fn new(quiet: bool) -> Self {
         Logger::with_name(crate_name!(), quiet)
     }
@@ -55,7 +58,7 @@ impl<'a> Logger<'a> {
         Logger { name, quiet }
     }
 
-    /// Prints the given message to `stderr`.
+    /// Prints the given message to stderr.
     pub fn log<D: Display>(&self, message: D) {
         if !self.quiet {
             eprintln!("{}: {}", self.name, message);

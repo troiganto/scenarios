@@ -13,17 +13,20 @@
 // permissions and limitations under the License.
 
 
-/// A stock of `PoolToken`s.
+/// A stock of [`PoolToken`]s.
 ///
 /// This type allows predefining a set of tokens which may be given
 /// out, carried around, and later redeemed. The maximum number of
 /// available tokens is specified at construction and cannot be
 /// changed.
 ///
-/// `ProcessPool` limits the number of child processes that can run at
-/// any time by requiring a token when accepting a new child process
+/// [`ProcessPool`] limits the number of child processes that can run
+/// at any time by requiring a token when accepting a new child process
 /// and by only returning said token once the child has finished
 /// running.
+///
+/// [`PoolToken`]: ./struct.PoolToken.html
+/// [`ProcessPool`]: ./struct.ProcessPool.html
 #[derive(Debug)]
 pub struct TokenStock {
     /// The number of tokens remaining in this stock.
@@ -71,10 +74,12 @@ impl Default for TokenStock {
 }
 
 
-/// Tokens returned by `TokenStock`.
+/// Tokens returned by [`TokenStock`].
 ///
 /// The only purpose of these tokens is to be handed out and redeemed.
 /// This allows controlling how many jobs are running at any time.
+///
+/// [`TokenStock`]: ./struct.TokenStock.html
 #[derive(Debug)]
 #[must_use]
 pub struct PoolToken(());

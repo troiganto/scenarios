@@ -20,20 +20,19 @@
 
 /// Iterates over the Cartesian product of a list of containers.
 ///
-/// This essentially does the same as the macro `itertools::iproduct`,
-/// but the number of arguments may be decided at run-time.
-/// In return, this function requires that all passed iterators
-/// yield items of the same type, whereas the iterators passed to
-/// `itertools::iproduct` may be heterogenous.
+/// This essentially does the same as the macro
+/// `itertools::iproduct!()`, but the number of arguments may be
+/// decided at run-time. In return, this function requires that all
+/// passed iterators yield items of the same type, whereas the
+/// iterators passed to `itertools::iproduct!()` may be heterogenous.
+/// Furthermore, the freedom of choosing the number of arguments at
+/// run-time means that the product iterator iterates over vectors
+/// instead of slices. This requires a heap allocation for every item.
 ///
-/// The trait bounds are as follows: The argument to this function must
-/// be an immutable slice of containers `C` with items `T`. *Immutable
-/// references* to these containers must be convertible to iterators
-/// (over `&T`). This is necessary because `product()` needs to iterate
-/// over these containers multiple times, so calling `into_iter` must
-/// not consume the passed containers. Finally, the lifetime `'a` ties
-/// all the used references to the sclice originally passed to
-/// `product()`.
+/// The argument to this function is a slice of containers `C` with
+/// items `T`. *Immutable references* to these containers must be
+/// convertible to iterators over `&T`. This is necessary because we
+/// need to pass over each container multiple times.
 ///
 /// # Example
 ///
@@ -52,7 +51,7 @@
 /// ```
 ///
 /// Note that if any one of the passed containers is empty, the product
-/// as a whole is an empty iterator, too.
+/// as a whole is empty, too.
 ///
 /// ```rust
 /// extern crate scenarios;
@@ -77,7 +76,9 @@ where
 }
 
 
-/// Iterator over the Cartesian product of some sub-iterators.
+/// Iterator returned by [`product()`].
+///
+/// [`product()`]: ./fn.product.html
 pub struct Product<'a, C: 'a, T: 'a>
 where
     &'a C: IntoIterator<Item = &'a T>,
@@ -136,8 +137,8 @@ where
     /// `Iterator::collect()` works when collecting into an
     /// `Option<Vec<_>>`, `next_item` is initialized to some empty
     /// vector, so this will be the first thing we yield. Then, when
-    /// `self.advance()` is called, we fall through the `while` loop
-    /// and immediately exhaust this iterator, yielding nothing more.
+    /// `self.advance()` is called, we fall through the `while` loop and
+    /// immediately exhaust this iterator, yielding nothing more.
     fn advance(&mut self) {
         if let Some(ref mut next_item) = self.next_item {
             let mut i = self.iterators.len();

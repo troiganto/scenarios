@@ -21,13 +21,16 @@ use std::collections::hash_map::{self, HashMap};
 
 /// Named set of environment variable definitions.
 ///
-/// A scenario has a name and a set of environment variable definitions.
-/// Each definition has an associated variable name and the
-/// corresponding
-/// value, both strings. A variable name must follow the rules for
-/// regular
-/// C identifiers. A scenario name must be non-empty and not contain
-/// any null byte.
+/// A scenario has a name and a set of environment variable
+/// definitions. Each definition consists of a variable name and the
+/// corresponding variable value, both strings. A variable name must
+/// follow the rules for regular C identifiers. A scenario name must be
+/// non-empty and not contain any null byte.
+///
+/// Note: The rules for regular C identifiers are as follows: The name
+/// must contain only the 26 Latin characters (upper- or lowercase),
+/// the underscore, and the ten digits of the ASCII character set. The
+/// first character must not be a digit.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scenario<'a> {
     name: Cow<'a, str>,
@@ -38,8 +41,10 @@ impl<'a> Scenario<'a> {
     /// Creates a new scenario named `name`.
     ///
     /// # Errors
-    /// This call fails with `ParseError::InvalidName` if `name`
-    /// is the empty string or contains a null byte.
+    /// This call fails with [`InvalidName`] if `name` is the empty
+    /// string or contains a null byte.
+    ///
+    /// [`InvalidName`]: ./enum.ScenarioError.html#variant.InvalidName
     pub fn new<S: Into<Cow<'a, str>>>(name: S) -> Result<Self, ScenarioError> {
         let name = name.into();
         if name.is_empty() || name.contains('\0') {
@@ -53,10 +58,14 @@ impl<'a> Scenario<'a> {
     /// Adds another variable definition of the current set.
     ///
     /// # Errors
-    /// This call fails with `ScenarioError::InvalidVariable` if `name`
-    /// is not a valid variable name (`[A-Za-z_][A-Za-z0-9_]+`). It
-    /// fails with `ScenarioError::DuplicateVariable` if a variable of
-    /// this name already has been added to the scenario.
+    /// This call fails with [`InvalidVariable`] if `name` is not a
+    /// valid variable name. It fails with [`DuplicateVariable`] if a
+    /// variable of this name already has been added to the scenario.
+    ///
+    /// [`InvalidVariable`]:
+    /// ./enum.ScenarioError.html#variant.InvalidVariable
+    /// [`DuplicateVariable`]:
+    /// ./enum.ScenarioError.html#variant.DuplicateVariable
     pub fn add_variable(&mut self, name: &'a str, value: &'a str) -> Result<(), ScenarioError> {
         if self.has_variable(name) {
             Err(ScenarioError::DuplicateVariable(name.to_owned()))
@@ -105,7 +114,7 @@ impl<'a> Scenario<'a> {
 
     /// Merges several scenarios into one.
     ///
-    /// See `Scenario::merge` for more information.
+    /// See [`merge()`] for more information.
     ///
     /// # Errors
     /// The merge can fail if strict mode was enabled and two scenarios
@@ -114,6 +123,8 @@ impl<'a> Scenario<'a> {
     /// # Panics
     /// This function panics if `scenarios` turns into an empty
     /// iterator.
+    ///
+    /// [`merge()`]: #method.merge
     pub fn merge_all<I>(scenarios: I, opts: MergeOptions) -> Result<Self, MergeError>
     where
         I: IntoIterator,
@@ -147,15 +158,21 @@ impl<'a> Scenario<'a> {
     /// Merges another scenario into this one.
     ///
     /// This combines the names and variables of both scenarios. The
-    /// names get combined with `opts.delimiter` between them.
-    /// Variables are combined by adding the `other` `HashMap` into
-    /// `self`'s. If both scenarios define the same variable and
-    /// `opts.strict` is `false`, the value of `other`'s takes
-    /// precedence.
+    /// names get combined with [`opts.delimiter`] between them.
+    /// Variables are combined by adding definitions from `other` to
+    /// `self`. If both scenarios define the same variable and
+    /// [`opts.is_strict`] is `false`, the value of `other`'s
+    /// variable takes precedence.
     ///
     /// # Errors
-    /// If `ops.strict` is `true` and both scenarios define the same
-    /// variable, `MergeError` is returned.
+    /// If [`opts.is_strict`] is `true` and both scenarios define the
+    /// same variable, [`MergeError`] is returned.
+    ///
+    /// [`opts.delimiter`]:
+    /// ./struct.MergeOptions.html#structfield.delimiter
+    /// [`opts.is_strict`]:
+    /// ./struct.MergeOptions.html#structfield.is_strict
+    /// [`MergeError`]: ./struct.MergeError.html
     pub fn merge(&mut self, other: &Scenario<'a>, opts: MergeOptions) -> Result<(), MergeError> {
         // Turn (&&str, &&str) iterator into (&str, &str) iterator.
         let other_vars = other.variables().map(|(&k, &v)| (k, v));
@@ -206,7 +223,9 @@ impl<'a> Display for Scenario<'a> {
 }
 
 
-/// Wrapper type around customization options to `Scenario::merge()`.
+/// Wrapper type around customization options to [`Scenario::merge()`].
+///
+/// [`Scenario::merge()`]: ./struct.Scenario.html#method.merge
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MergeOptions<'a> {
     /// A string used to join the scenario names together.
@@ -252,9 +271,11 @@ impl FromIterator<()> for Nothing {
 /// Tests if a character is a valid C identifier.
 ///
 /// C identifiers contain only the following characters:
-/// * ASCII letters (lowercase or uppercase),
-/// * ASCII digits,
-/// * the ASCII underscore.
+///
+/// - ASCII letters (lowercase or uppercase),
+/// - ASCII digits,
+/// - the ASCII underscore.
+///
 /// Additionally, they must not begin with a digit, and contain at
 /// least one character.
 fn is_c_identifier(s: &str) -> bool {
@@ -280,6 +301,8 @@ fn is_c_identifier(s: &str) -> bool {
 /// Finds a scenario that defines a variable and returns its name.
 ///
 /// This is a helper function to `Scenario::merge_all()`.
+///
+/// [`Scenario::merge_all()`]: ./struct.Scenario.html#method.merge_all
 fn name_of_first_scenario_with_variable<'a, I>(mut scenarios: I, varname: &str) -> Option<String>
 where
     I: Iterator,
@@ -291,7 +314,9 @@ where
 }
 
 
-/// Errors that may occur when building a scenario.
+/// Errors that may occur when building a [`Scenario`].
+///
+/// [`Scenario`]: ./struct.Scenario.html
 #[derive(Debug, Fail)]
 pub enum ScenarioError {
     /// The scenario name is illegal.
@@ -307,6 +332,12 @@ pub enum ScenarioError {
 
 
 /// Errors caused by conflicting variables during merging of scenarios.
+///
+/// This error may be returned by [`Scenario::merge()`] and
+/// [`Scenario::merge_all()`].
+///
+/// [`Scenario::merge()`]: ./struct.Scenario.html#method.merge
+/// [`Scenario::merge_all()`]: ./struct.Scenario.html#method.merge_all
 #[derive(Debug, Fail)]
 #[fail(display = "variable \"{}\" defined both in scenario \"{}\" and in scenario \"{}\"",
        varname, left, right)]
