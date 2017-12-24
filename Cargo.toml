@@ -7,6 +7,5 @@ description = "Run a command line multiple times in different environments."
 [dependencies]
 clap = { version = "*", default-features = false, features = ["wrap_help"] }
 failure = "*"
-failure_derive = "*"
 glob = "*"
 num_cpus = "*"
