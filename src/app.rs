@@ -108,7 +108,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
                          shell-like glob pattern."))
         // Only one of --print, --print0, and <command> may be passed.
         .group(ArgGroup::with_name("output")
-            .args(&["print", "print0", "command_line"])
+            .args(&["print", "print0", "exec"])
             .required(false))
         // Scenario name printing.
         .arg(Arg::with_name("print")
@@ -137,7 +137,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
                          is useful when piping the names to \
                          \"xargs -0\"."))
         // Command line execution.
-        .arg(Arg::with_name("command_line")
+        .arg(Arg::with_name("exec")
              .takes_value(true)
              .value_name("COMMAND")
              .multiple(true)
@@ -151,7 +151,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("ignore_env")
              .short("I")
              .long("ignore-env")
-             .requires("command_line")
+             .requires("exec")
              .help("Don't export the current environment to COMMAND.")
              .long_help("Don't export the current environment to \
                          COMMAND. If this flag is passed, COMMAND sees \
@@ -159,12 +159,12 @@ pub fn get_app() -> clap::App<'static, 'static> {
                          the scenario files."))
         .arg(Arg::with_name("no_insert_name")
              .long("no-insert-name")
-             .requires("command_line")
+             .requires("exec")
              .help("Don't replace '{}' with SCENARIOS_NAME when \
                     reading COMMAND."))
         .arg(Arg::with_name("no_export_name")
              .long("no-export-name")
-             .requires("command_line")
+             .requires("exec")
              .help("Don't export SCENARIOS_NAME to COMMAND.")
              .long_help("Don't export SCENARIOS_NAME to COMMAND. If \
                          use this parameter, you are able to define \
@@ -173,7 +173,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("keep_going")
              .short("k")
              .long("keep-going")
-             .requires("command_line")
+             .requires("exec")
              .help("Don't abort if a COMMAND fails.")
              .long_help("Don't abort if a COMMAND fails. The default \
                          is to cancel everything as soon as one job \
@@ -182,7 +182,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("jobs")
              .short("j")
              .long("jobs")
-             .requires("command_line")
+             .requires("exec")
              .takes_value(true)
              .value_name("N")
              .min_values(0)

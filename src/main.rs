@@ -134,7 +134,7 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
                 Err(_) => true,
             },
         );
-    if args.is_present("command_line") {
+    if args.is_present("exec") {
         let handler = CommandLineHandler::new(&args)?;
         consumers::loop_in_process_pool(combos, handler)?;
     } else {
@@ -249,11 +249,11 @@ impl<'a> CommandLineHandler<'a> {
             add_scenarios_name: !args.is_present("no_export_name"),
             insert_name_in_args: !args.is_present("no_insert_name"),
         };
-        // This is only called if the argument `command_line` is
+        // This is only called if the argument `exec` is
         // present. And since it's a positional argument, i.e. not an
         // --option, being present also means not being empty. Hence,
         // it is safe to unwrap here.
-        args.values_of_os("command_line")
+        args.values_of_os("exec")
             .and_then(|argv| consumers::CommandLine::with_options(argv, options))
             .unwrap()
     }
