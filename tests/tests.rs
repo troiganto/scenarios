@@ -244,6 +244,60 @@ mod errors {
     }
 
     #[test]
+    fn test_conflict_print_exec() {
+        let mut runner = Runner::new();
+        runner.args(&["--print", "--", "echo", "aaa"]);
+        let expected = r"error: The argument '--print <FORMAT>' cannot be used with one or more of the other specified arguments
+
+USAGE:
+    scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [-- <COMMAND>...]
+
+For more information try --help
+";
+        let output = runner.output();
+        assert_eq!(&expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_conflict_print0_exec() {
+        let mut runner = Runner::new();
+        runner.args(&["--print0", "--", "echo", "aaa"]);
+        let expected = r"error: The argument '--print0 <FORMAT>' cannot be used with one or more of the other specified arguments
+
+USAGE:
+    scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [-- <COMMAND>...]
+
+For more information try --help
+";
+        let output = runner.output();
+        assert_eq!(&expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    fn test_conflict_print_print0() {
+        let mut runner = Runner::new();
+        runner.args(&["--print", "{}", "--print0", "{}"]);
+        let expected = r"error: The argument '--print <FORMAT>' cannot be used with one or more of the other specified arguments
+
+USAGE:
+    scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [-- <COMMAND>...]
+
+For more information try --help
+";
+        let output = runner.output();
+        assert_eq!(&expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
     fn test_no_args() {
         let expected = "scenarios: error: no scenarios provided\n";
         let output = Runner::new().output();
