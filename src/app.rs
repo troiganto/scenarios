@@ -30,6 +30,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .usage("scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [-- <COMMAND>...]")
         .setting(clap::AppSettings::TrailingVarArg)
         .setting(AppSettings::DeriveDisplayOrder)
+
         // General args.
         // We create our own --help so that the arguments are correctly
         // ordered.
@@ -46,41 +47,53 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .long_help("Suppress information during execution of \
                          commands. Errors found in the given scenario \
                          files are still printed to stderr."))
-        .arg(Arg::with_name("delimiter")
-             .short("d")
-             .long("delimiter")
+
+        // Main options.
+        .arg(Arg::with_name("print")
+             .long("print")
              .takes_value(true)
-             .value_name("STRING")
-             .default_value(", ")
-             // We print the default ourselves because the by default
-             // (hahah), no quotes are printed around the value.
-             .hide_default_value(true)
-             .help("The delimiter to use when combining scenario \
-                    names. [default: ', ']"))
-        // Strict mode control.
-        .group(ArgGroup::with_name("strict_mode")
-               .args(&["strict", "lax"])
-               .required(false))
-        .arg(Arg::with_name("strict")
-             .short("s")
-             .long("strict")
-             .help("Produce error on conflicting definitions of \
-                    environment variables. [default]")
-             .long_help("Produce error on conflicting definitions of \
-                         environment variables. No two scenario files \
-                         may define the same scenario name or \
-                         environment variable. You may not define a \
-                         variable called \"SCENARIOS_NAME\" unless \
-                         --no-export-name is passed. [default]"))
-        .arg(Arg::with_name("lax")
-             .short("l")
-             .long("lax")
-             .help("Disable strict mode."))
+             .min_values(0)
+             .max_values(1)
+             .value_name("FORMAT")
+             .help("Print SCENARIOS_NAME to stdout for each scenario \
+                    combination. [default]")
+             .long_help("Print SCENARIOS_NAME to stdout for each \
+                         scenario combination. Names are separated by \
+                         newlines. An optional format string may be \
+                         passed, in which \"{}\" gets replaced with \
+                         SCENARIOS_NAME. [default]"))
+        .arg(Arg::with_name("print0")
+             .long("print0")
+             .takes_value(true)
+             .min_values(0)
+             .max_values(1)
+             .conflicts_with("print")
+             .value_name("FORMAT")
+             .help("Like --print, but separate scenario names with a \
+                    null byte instead of a newline.")
+             .long_help("Like --print, but separate scenario names \
+                         with a null byte instead of a newline. This \
+                         is useful when piping the names to \
+                         \"xargs -0\"."))
+        .arg(Arg::with_name("exec")
+             .takes_value(true)
+             .multiple(true)
+             .last(true)
+             .conflicts_with("print")
+             .conflicts_with("print0")
+             .value_name("COMMAND...")
+             .help("A command line to execute for each scenario \
+                    combination.")
+             .long_help("A command line to execute for each scenario \
+                         combination. This must always preceded by \
+                         \"--\" to distinguish it from the list of \
+                         scenario files."))
+
         // Input control.
         .arg(Arg::with_name("input")
              .takes_value(true)
-             .value_name("SCENARIO FILES")
              .multiple(true)
+             .value_name("SCENARIO FILES")
              .help("The scenario files to process.")
              .long_help("The scenario files to process. If multiple \
                          files are passed, all possible combinations \
@@ -100,53 +113,34 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .short("x")
              .long("exclude")
              .takes_value(true)
-             .value_name("SCENARIO NAME")
              .conflicts_with("choose")
+             .value_name("SCENARIO NAME")
              .help("Ignore scenarios with the given name.")
              .long_help("Ignore all scenarios with the given name. As \
                          for --choose, SCENARIO NAME may be a \
                          shell-like glob pattern."))
-        // Scenario name printing.
-        .arg(Arg::with_name("print")
-             .long("print")
-             .takes_value(true)
-             .value_name("FORMAT")
-             .min_values(0)
-             .max_values(1)
-             .help("Print SCENARIOS_NAME to stdout for each scenario \
-                    combination. [default]")
-             .long_help("Print SCENARIOS_NAME to stdout for each \
-                         scenario combination. Names are separated by \
-                         newlines. An optional format string may be \
-                         passed, in which \"{}\" gets replaced with \
-                         SCENARIOS_NAME. [default]"))
-        .arg(Arg::with_name("print0")
-             .long("print0")
-             .takes_value(true)
-             .value_name("FORMAT")
-             .min_values(0)
-             .max_values(1)
-             .conflicts_with("print")
-             .help("Like --print, but separate scenario names with a \
-                    null byte instead of a newline.")
-             .long_help("Like --print, but separate scenario names \
-                         with a null byte instead of a newline. This \
-                         is useful when piping the names to \
-                         \"xargs -0\"."))
+
+        // Strict mode control.
+        .group(ArgGroup::with_name("strict_mode")
+               .args(&["strict", "lax"])
+               .required(false))
+        .arg(Arg::with_name("strict")
+             .short("s")
+             .long("strict")
+             .help("Produce error on conflicting definitions of \
+                    environment variables. [default]")
+             .long_help("Produce error on conflicting definitions of \
+                         environment variables. No two scenario files \
+                         may define the same scenario name or \
+                         environment variable. You may not define a \
+                         variable called \"SCENARIOS_NAME\" unless \
+                         --no-export-name is passed. [default]"))
+        .arg(Arg::with_name("lax")
+             .short("l")
+             .long("lax")
+             .help("Disable strict mode."))
+
         // Command line execution.
-        .arg(Arg::with_name("exec")
-             .takes_value(true)
-             .value_name("COMMAND")
-             .multiple(true)
-             .last(true)
-             .conflicts_with("print")
-             .conflicts_with("print0")
-             .help("A command line to execute for each scenario \
-                    combination.")
-             .long_help("A command line to execute for each scenario \
-                         combination. This must always preceded by \
-                         \"--\" to distinguish it from the list of \
-                         scenario files."))
         .arg(Arg::with_name("ignore_env")
              .short("I")
              .long("ignore-env")
@@ -169,6 +163,17 @@ pub fn get_app() -> clap::App<'static, 'static> {
                          use this parameter, you are able to define \
                          your own SCENARIOS_NAME without it being \
                          overwritten. (Why would you, though?)"))
+
+        // Handling multiple scenarios.
+        .arg(Arg::with_name("delimiter")
+             .short("d")
+             .long("delimiter")
+             .takes_value(true)
+             .default_value(", ")
+             .hide_default_value(true)
+             .value_name("STRING")
+             .help("The delimiter to use when combining scenario \
+                    names. [default: ', ']"))
         .arg(Arg::with_name("keep_going")
              .short("k")
              .long("keep-going")
@@ -177,19 +182,18 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .long_help("Don't abort if a COMMAND fails. The default \
                          is to cancel everything as soon as one job \
                          has been found out to have failed."))
-        // Multi-processing.
         .arg(Arg::with_name("jobs")
              .short("j")
              .long("jobs")
              .requires("exec")
              .takes_value(true)
-             .value_name("N")
              .min_values(0)
              .max_values(1)
-            .help("The number of COMMANDs to execute in parallel.")
-            .long_help("The number of COMMANDs to execute in parallel. \
-                       If no number is passed, the detected number of \
-                       CPUs on this machine is used."))
+             .value_name("N")
+             .help("The number of COMMANDs to execute in parallel.")
+             .long_help("The number of COMMANDs to execute in \
+                        parallel. If no number is passed, the detected \
+                        number of CPUs on this machine is used."))
 }
 
 
