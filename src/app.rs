@@ -106,10 +106,6 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .long_help("Ignore all scenarios with the given name. As \
                          for --choose, SCENARIO NAME may be a \
                          shell-like glob pattern."))
-        // Only one of --print, --print0, and <command> may be passed.
-        .group(ArgGroup::with_name("output")
-            .args(&["print", "print0", "exec"])
-            .required(false))
         // Scenario name printing.
         .arg(Arg::with_name("print")
              .long("print")
@@ -130,6 +126,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .value_name("FORMAT")
              .min_values(0)
              .max_values(1)
+             .conflicts_with("print")
              .help("Like --print, but separate scenario names with a \
                     null byte instead of a newline.")
              .long_help("Like --print, but separate scenario names \
@@ -142,6 +139,8 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .value_name("COMMAND")
              .multiple(true)
              .last(true)
+             .conflicts_with("print")
+             .conflicts_with("print0")
              .help("A command line to execute for each scenario \
                     combination.")
              .long_help("A command line to execute for each scenario \
