@@ -27,8 +27,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())
-        .usage("scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [-- <COMMAND>...]")
-        .setting(clap::AppSettings::TrailingVarArg)
+        .usage("scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [--exec <COMMAND...>]")
         .setting(AppSettings::DeriveDisplayOrder)
 
         // General args.
@@ -76,9 +75,10 @@ pub fn get_app() -> clap::App<'static, 'static> {
                          is useful when piping the names to \
                          \"xargs -0\"."))
         .arg(Arg::with_name("exec")
+             .long("exec")
              .takes_value(true)
-             .multiple(true)
-             .last(true)
+             .allow_hyphen_values(true)
+             .min_values(1)
              .conflicts_with("print")
              .conflicts_with("print0")
              .value_name("COMMAND...")
