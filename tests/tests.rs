@@ -151,7 +151,7 @@ mod environment {
         let expected = "-A1-\n-A2-\n";
         let output = Runner::new()
             .scenario_file("good_a.ini")
-            .args(&["--", "echo", "-{}-"])
+            .args(&["--exec", "echo", "-{}-"])
             .output();
         assert_eq!("", &output.stderr);
         assert_eq!(expected, &output.stdout);
@@ -165,7 +165,7 @@ mod environment {
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .arg("--no-insert-name")
-            .args(&["--", "echo", "-{}-"])
+            .args(&["--exec", "echo", "-{}-"])
             .output();
         assert_eq!("", &output.stderr);
         assert_eq!(expected, &output.stdout);
@@ -179,7 +179,7 @@ mod environment {
         let output = Runner::new()
             .scenario_file("one_empty.ini")
             .arg("--no-export-name")
-            .args(&["--", "env"])
+            .args(&["--exec", "env"])
             .output();
         assert_eq!("", &output.stderr);
         assert_eq!(expected, &output.stdout);
@@ -193,7 +193,7 @@ mod environment {
         let output = Runner::new()
             .scenario_file("one_empty.ini")
             .arg("--ignore-env")
-            .args(&["--", "env"])
+            .args(&["--exec", "env"])
             .output();
         assert_eq!("", &output.stderr);
         assert_eq!(expected, &output.stdout);
@@ -206,7 +206,7 @@ mod environment {
         let output = Runner::new()
             .scenario_file("one_empty.ini")
             .args(&["--ignore-env", "--no-export-name"])
-            .args(&["--", "env"])
+            .args(&["--exec", "env"])
             .output();
         assert_eq!("", &output.stderr);
         assert_eq!("", &output.stdout);
@@ -220,7 +220,7 @@ mod environment {
         let output = Runner::new()
             .scenario_file("conflicts_with_a.ini")
             .args(&["--ignore-env", "--no-export-name"])
-            .args(&["--", "env"])
+            .args(&["--exec", "env"])
             .output();
         assert_eq!("", &output.stderr);
         assert_eq!(expected, &output.stdout);
@@ -239,9 +239,69 @@ mod errors {
         runner
             .scenario_file("many_scenarios.ini")
             .args(additional_args)
-            .args(&["--", "sh", "-c", &script]);
+            .args(&["--exec", "sh", "-c", &script]);
         runner
     }
+
+    #[test]
+    #[cfg_attr(rustfmt, rustfmt_skip)]
+    fn test_conflict_print_exec() {
+        let mut runner = Runner::new();
+        runner.args(&["--print", "--exec", "echo", "aaa"]);
+        let expected = "error: The argument '--exec <COMMAND...>' cannot be used with '--print \
+                        <FORMAT>'
+
+USAGE:
+    scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [--exec <COMMAND...>]
+
+For more information try --help
+";
+        let output = runner.output();
+        assert_eq!(&expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    #[cfg_attr(rustfmt, rustfmt_skip)]
+    fn test_conflict_print0_exec() {
+        let mut runner = Runner::new();
+        runner.args(&["--print0", "--exec", "echo", "aaa"]);
+        let expected = "error: The argument '--exec <COMMAND...>' cannot be used with '--print0 \
+                        <FORMAT>'
+
+USAGE:
+    scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [--exec <COMMAND...>]
+
+For more information try --help
+";
+        let output = runner.output();
+        assert_eq!(&expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
+
+    #[test]
+    #[cfg_attr(rustfmt, rustfmt_skip)]
+    fn test_conflict_print_print0() {
+        let mut runner = Runner::new();
+        runner.args(&["--print", "{}", "--print0", "{}"]);
+        let expected = "error: The argument '--print0 <FORMAT>' cannot be used with '--print \
+                        <FORMAT>'
+
+USAGE:
+    scenarios [FlAGS] [OPTIONS] <SCENARIO FILES>... [--exec <COMMAND...>]
+
+For more information try --help
+";
+        let output = runner.output();
+        assert_eq!(&expected, &output.stderr);
+        assert_eq!("", &output.stdout);
+        assert!(!output.status.success());
+    }
+
 
     #[test]
     fn test_no_args() {
@@ -289,7 +349,7 @@ scenarios: not all scenarios terminated successfully
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
-            .args(&["--", "not a command"])
+            .args(&["--exec", "not a command"])
             .output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);
@@ -307,7 +367,7 @@ scenarios: not all scenarios terminated successfully
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
-            .args(&["--jobs=2", "--", "not a command"])
+            .args(&["--jobs=2", "--exec", "not a command"])
             .output();
         assert_eq!(expected, &output.stderr);
         assert!(!output.status.success());
@@ -355,7 +415,7 @@ scenarios: not all scenarios terminated successfully
         let expected_stdout = "";
         let output = Runner::new()
             .scenario_file("many_scenarios.ini")
-            .args(&["--jobs=2", "--", "sh", "-c", "exit 1"])
+            .args(&["--jobs=2", "--exec", "sh", "-c", "exit 1"])
             .output();
         assert_eq!(expected_stderr, &output.stderr);
         assert_eq!(expected_stdout, &output.stdout);
@@ -400,12 +460,12 @@ mod invalid_args {
     #[test]
     fn test_delimiter() {
         let expected = r#"scenarios: error: invalid value for --delimiter
-scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+scenarios:   -> reason: contains invalid UTF-8 character: "\xFA"
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .arg("--delimiter")
-            .arg(OsString::from_bytes(b"\xfa"))
+            .arg(OsString::from_bytes(b"\xFA"))
             .output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);
@@ -419,7 +479,7 @@ scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
         let expected_first_line = "scenarios: error: could not read file";
         let output = Runner::new()
             .scenario_file("good_a.ini")
-            .arg(OsString::from_bytes(b"broken_name_\xfa.ini"))
+            .arg(OsString::from_bytes(b"broken_name_\xFA.ini"))
             .output();
         let first_line = output.stderr.lines().next().unwrap();
         assert_eq!(expected_first_line, first_line);
@@ -431,12 +491,12 @@ scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
     #[test]
     fn test_choose() {
         let expected = r#"scenarios: error: invalid value for --choose
-scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+scenarios:   -> reason: contains invalid UTF-8 character: "\xFA"
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .arg("--choose")
-            .arg(OsString::from_bytes(b"\xfa"))
+            .arg(OsString::from_bytes(b"\xFA"))
             .output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);
@@ -447,12 +507,12 @@ scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
     #[test]
     fn test_exclude() {
         let expected = r#"scenarios: error: invalid value for --exclude
-scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+scenarios:   -> reason: contains invalid UTF-8 character: "\xFA"
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .arg("--exclude")
-            .arg(OsString::from_bytes(b"\xfa"))
+            .arg(OsString::from_bytes(b"\xFA"))
             .output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);
@@ -463,12 +523,12 @@ scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
     #[test]
     fn test_print() {
         let expected = r#"scenarios: error: invalid value for --print
-scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+scenarios:   -> reason: contains invalid UTF-8 character: "\xFA"
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .arg("--print")
-            .arg(OsString::from_bytes(b"\xfa"))
+            .arg(OsString::from_bytes(b"\xFA"))
             .output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);
@@ -479,12 +539,12 @@ scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
     #[test]
     fn test_print0() {
         let expected = r#"scenarios: error: invalid value for --print0
-scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+scenarios:   -> reason: contains invalid UTF-8 character: "\xFA"
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .arg("--print0")
-            .arg(OsString::from_bytes(b"\xfa"))
+            .arg(OsString::from_bytes(b"\xFA"))
             .output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);
@@ -498,8 +558,8 @@ scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
         let expected_first_line = "scenarios: error: could not start scenario \"A1\"";
         let output = Runner::new()
             .scenario_file("good_a.ini")
-            .arg("--")
-            .arg(OsString::from_bytes(b"ec\xfao"))
+            .arg("--exec")
+            .arg(OsString::from_bytes(b"ec\xFAo"))
             .output();
         let first_line = output.stderr.lines().next().unwrap();
         assert_eq!(expected_first_line, first_line);
@@ -511,13 +571,13 @@ scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
     #[test]
     fn test_jobs_no_unicode() {
         let expected = r#"scenarios: error: invalid value for --jobs
-scenarios:   -> reason: contains invalid UTF-8 character: "\xfa"
+scenarios:   -> reason: contains invalid UTF-8 character: "\xFA"
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
             .arg("--jobs")
-            .arg(OsString::from_bytes(b"\xfa"))
-            .args(&["--", "echo"])
+            .arg(OsString::from_bytes(b"\xFA"))
+            .args(&["--exec", "echo"])
             .output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);
@@ -532,7 +592,7 @@ scenarios:   -> reason: not a number: "three"
 "#;
         let output = Runner::new()
             .scenario_file("good_a.ini")
-            .args(&["--jobs", "three", "--", "echo"])
+            .args(&["--jobs", "three", "--exec", "echo"])
             .output();
         assert_eq!(expected, &output.stderr);
         assert_eq!("", &output.stdout);

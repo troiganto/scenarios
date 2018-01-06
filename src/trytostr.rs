@@ -35,9 +35,9 @@ impl OsStrExt for OsStr {
 }
 
 
-/// The error type of [`OsStrExt::try_to_str()`].
+/// The error type of [`OsStrExt`].
 ///
-/// [`OsStrExt::try_to_str()`]: ./trait.OsStrExt.html#tymethod.try_to_str
+/// [`OsStrExt`]: ./trait.OsStrExt.html
 #[derive(Debug, Fail)]
 #[fail(display = "contains invalid UTF-8 character: {:?}", _0)]
 pub struct NotUtf8(OsString);
