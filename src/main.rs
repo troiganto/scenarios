@@ -106,7 +106,7 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
     let delimiter = args.value_of_os("delimiter")
-        .expect("default value")
+        .unwrap_or(", ".as_ref())
         .try_to_str()
         .context("invalid value for --delimiter")?;
     let scenario_files: Vec<ScenarioFile> = args.values_of_os("input")
@@ -260,16 +260,19 @@ impl<'a> CommandLineHandler<'a> {
 
     /// Parses and interprets the `--jobs` option.
     fn max_num_tokens_from_args(args: &clap::ArgMatches) -> Result<usize, Error> {
-        if !args.is_present("jobs") {
+        if args.occurrences_of("jobs") == 0 {
             return Ok(1);
         }
-        let num = match args.value_of_os("jobs") {
-            Some(num) => num,
-            None => return Ok(num_cpus::get()),
-        };
-        let num = num.try_to_str()?;
-        let num = num.parse().map_err(|_| NotANumber(num.to_owned()))?;
-        Ok(num)
+        let jobs_arg = args.value_of_os("jobs")
+            .expect("default value")
+            .try_to_str()?;
+        if jobs_arg == "auto" {
+            return Ok(num_cpus::get());
+        }
+        let num_jobs = jobs_arg
+            .parse()
+            .map_err(|_| NotANumber(jobs_arg.to_owned()))?;
+        Ok(num_jobs)
     }
 }
 

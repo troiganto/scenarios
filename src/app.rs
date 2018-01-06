@@ -16,7 +16,7 @@
 //! Contains all calls to `clap` so it doesn't clutter `main()`.
 
 
-use clap::{self, Arg, ArgGroup, App, AppSettings};
+use clap::{self, Arg, App, AppSettings};
 
 
 /// Returns an [`App`] instance.
@@ -79,6 +79,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .takes_value(true)
              .allow_hyphen_values(true)
              .min_values(1)
+             .value_terminator(";")
              .conflicts_with("print")
              .conflicts_with("print0")
              .value_name("COMMAND...")
@@ -121,9 +122,6 @@ pub fn get_app() -> clap::App<'static, 'static> {
                          shell-like glob pattern."))
 
         // Strict mode control.
-        .group(ArgGroup::with_name("strict_mode")
-               .args(&["strict", "lax"])
-               .required(false))
         .arg(Arg::with_name("strict")
              .short("s")
              .long("strict")
@@ -138,6 +136,7 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("lax")
              .short("l")
              .long("lax")
+             .conflicts_with("strict")
              .help("Disable strict mode."))
 
         // Command line execution.
@@ -169,8 +168,6 @@ pub fn get_app() -> clap::App<'static, 'static> {
              .short("d")
              .long("delimiter")
              .takes_value(true)
-             .default_value(", ")
-             .hide_default_value(true)
              .value_name("STRING")
              .help("The delimiter to use when combining scenario \
                     names. [default: ', ']"))
@@ -185,10 +182,8 @@ pub fn get_app() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("jobs")
              .short("j")
              .long("jobs")
-             .requires("exec")
              .takes_value(true)
-             .min_values(0)
-             .max_values(1)
+             .default_value("auto")
              .value_name("N")
              .help("The number of COMMANDs to execute in parallel.")
              .long_help("The number of COMMANDs to execute in \
