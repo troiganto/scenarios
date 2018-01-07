@@ -13,7 +13,6 @@
 // permissions and limitations under the License.
 
 
-use std::iter::FromIterator;
 use std::fmt::{self, Display};
 use std::borrow::{Borrow, Cow};
 use std::collections::hash_map::{self, HashMap};
@@ -139,12 +138,12 @@ impl<'a> Scenario<'a> {
             .borrow()
             .clone();
         // Go over each scenario `s` and merge it into `accumulator`. Abort on
-        // the first error. (`Nothing` is a `()` that allows `collect`ing.)
-        let result: Result<Nothing, MergeError> = scenarios
+        // the first error.
+        let result: Result<(), MergeError> = scenarios
             .map(|s| accumulator.merge(s.borrow(), opts))
             .collect();
         match result {
-            Ok(Nothing) => Ok(accumulator),
+            Ok(()) => Ok(accumulator),
             Err(mut err) => {
                 // If a `StrictMergeFailed` error occurs, the `left` scenario is a
                 // merged intermediary. This is useless! Change it to the correct
@@ -248,22 +247,6 @@ impl<'a> MergeOptions<'a> {
 impl<'a> Default for MergeOptions<'a> {
     fn default() -> Self {
         MergeOptions { delimiter: ", ", is_strict: true }
-    }
-}
-
-
-/// A zero-sized type that implements `FromIterator`.
-///
-/// This allows us to call `Iterator::collect<Result<_>>` without
-/// creating a vector when item type of the iterator is `()`.
-///
-/// TODO: Wait for `impl FromIterator<()> for ()` to be stabilized.
-struct Nothing;
-
-impl FromIterator<()> for Nothing {
-    fn from_iter<T: IntoIterator<Item = ()>>(iter: T) -> Self {
-        for _ in iter.into_iter() {}
-        Nothing
     }
 }
 
