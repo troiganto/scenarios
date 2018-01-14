@@ -16,7 +16,7 @@
 //! Provides the method `OsStr::try_to_str()`.
 
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 
 
 /// Extension trait on `OsStr`.
@@ -30,7 +30,7 @@ pub trait OsStrExt {
 
 impl OsStrExt for OsStr {
     fn try_to_str(&self) -> Result<&str, NotUtf8> {
-        self.to_str().ok_or_else(|| NotUtf8(self.to_owned()))
+        self.to_str().ok_or_else(|| NotUtf8(self.to_string_lossy().into_owned()))
     }
 }
 
@@ -39,5 +39,5 @@ impl OsStrExt for OsStr {
 ///
 /// [`OsStrExt`]: ./trait.OsStrExt.html
 #[derive(Debug, Fail)]
-#[fail(display = "contains invalid UTF-8 character: {:?}", _0)]
-pub struct NotUtf8(OsString);
+#[fail(display = "contains invalid UTF-8 character: \"{}\"", _0)]
+pub struct NotUtf8(String);
