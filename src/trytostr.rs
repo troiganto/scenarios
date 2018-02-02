@@ -30,7 +30,8 @@ pub trait OsStrExt {
 
 impl OsStrExt for OsStr {
     fn try_to_str(&self) -> Result<&str, NotUtf8> {
-        self.to_str().ok_or_else(|| NotUtf8(self.to_string_lossy().into_owned()))
+        self.to_str()
+            .ok_or_else(|| NotUtf8(self.to_string_lossy().into_owned()))
     }
 }
 
