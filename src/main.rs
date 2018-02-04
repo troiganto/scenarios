@@ -106,7 +106,7 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
     let delimiter = args.value_of_os("delimiter")
-        .unwrap_or(", ".as_ref())
+        .unwrap_or_else(|| ", ".as_ref())
         .try_to_str()
         .context("invalid value for --delimiter")?;
     let scenario_files: Vec<ScenarioFile> = args.values_of_os("input")
@@ -135,10 +135,10 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
             },
         );
     if args.is_present("exec") {
-        let handler = CommandLineHandler::new(&args)?;
+        let handler = CommandLineHandler::new(args)?;
         consumers::loop_in_process_pool(combos, handler)?;
     } else {
-        handle_printing(&args, combos)?;
+        handle_printing(args, combos)?;
     }
     Ok(())
 }
