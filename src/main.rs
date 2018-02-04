@@ -79,7 +79,7 @@ pub fn main() {
             let logger = logger::Logger::new(args.is_present("quiet"));
             match err.downcast::<SomeScenariosFailed>() {
                 Ok(err) => logger.log(err),
-                Err(err) => logger.log_error_chain(err),
+                Err(err) => logger.log_error_chain(&err),
             }
             1
         } else {
@@ -293,7 +293,7 @@ impl<'a, 's> consumers::LoopDriver<Result<Scenario<'s>, MergeError>> for Command
                 // TODO: Avoid logging the word "error" here, because
                 // this event does not stop us from running.
                 self.any_errors = true;
-                self.logger.log_error_chain(err)
+                self.logger.log_error_chain(&err)
             }
             Ok(())
         } else {
@@ -303,7 +303,7 @@ impl<'a, 's> consumers::LoopDriver<Result<Scenario<'s>, MergeError>> for Command
 
     fn on_loop_failed(&mut self, error: Error) {
         self.any_errors = true;
-        self.logger.log_error_chain(error);
+        self.logger.log_error_chain(&error);
         if self.max_num_of_children > 1 {
             self.logger.log("waiting for unfinished jobs ...");
         }
@@ -313,7 +313,7 @@ impl<'a, 's> consumers::LoopDriver<Result<Scenario<'s>, MergeError>> for Command
         if let Err(err) = child.and_then(FinishedChild::into_result) {
             // TODO: Avoid logging the word "error" here, because this
             // event does not stop us from running.
-            self.logger.log_error_chain(err);
+            self.logger.log_error_chain(&err);
         }
     }
 
