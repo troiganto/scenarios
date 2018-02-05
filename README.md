@@ -1,5 +1,7 @@
 # Scenarios – Executing a Command in Different Environments
 
+[![Build Status](https://travis-ci.org/troiganto/scenarios.svg?branch=master)](https://travis-ci.org/troiganto/scenarios)
+
 `Scenarios` is a command-line tool that allows you to execute the same command multiple times, each
 time with different environment variables set. When passed multiple lists of environments,
 `scenarios` goes through all possible combinations between them.
