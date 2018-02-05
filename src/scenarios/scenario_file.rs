@@ -125,7 +125,7 @@ impl<'a> ScenarioFile<'a> {
     fn check_for_duplicate_headers(&self) -> Result<(), Error> {
         let mut seen_headers = HashMap::new();
         let mut loc = ErrorLocation::new(self.filename);
-        for line in self.lines.iter() {
+        for line in &self.lines {
             loc.lineno += 1;
             // We are only interested in header lines. If a header line
             // has not been seen before, we note its content and line

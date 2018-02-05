@@ -202,7 +202,7 @@ pub fn print_long_help(app: clap::App) {
     app.after_help(LONG_EXPLANATION)
         .print_long_help()
         .unwrap();
-    print!("\n\n");
+    println!("\n");
 }
 
 

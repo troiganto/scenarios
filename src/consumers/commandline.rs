@@ -26,7 +26,7 @@ use super::children::{PreparedChild, ScenarioNotStarted};
 
 
 /// The name of the environment variable to hold the scenario name.
-const SCENARIOS_NAME_NAME: &'static str = "SCENARIOS_NAME";
+const SCENARIOS_NAME_NAME: &str = "SCENARIOS_NAME";
 
 
 /// Customization flags for [`CommandLine`].
@@ -193,7 +193,7 @@ impl<S: AsRef<OsStr>> CommandLine<S> {
     pub fn with_scenario(&self, scenario: Scenario) -> Result<PreparedChild, Error> {
         let (name, variables) = scenario.into_parts();
         let command = self.create_command(variables, &name)?;
-        let program = self.program().as_ref().as_ref();
+        let program = self.program().as_ref();
         Ok(PreparedChild::new(name.into_owned(), program, command))
     }
 
@@ -247,7 +247,7 @@ impl<S: AsRef<OsStr>> CommandLine<S> {
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
     {
-        for (k, v) in vars.into_iter() {
+        for (k, v) in vars {
             if k.as_ref() == SCENARIOS_NAME_NAME {
                 return Err(SCENARIOS_NAME_NAME.to_owned());
             }

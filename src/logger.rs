@@ -89,7 +89,7 @@ impl<'a> Logger<'a> {
     }
 
     /// First logs an error, then all its causes.
-    pub fn log_error_chain(&self, error: Error) {
+    pub fn log_error_chain(&self, error: &Error) {
         self.with_lock(
             |lock| {
                 let mut error = error.cause();

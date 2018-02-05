@@ -130,7 +130,7 @@ impl RunningChild {
     /// Waiting can theoretically fail. It is not clear under which
     /// circumstances this can happen and what the correct procedure
     /// would be.
-    pub fn is_finished(&mut self) -> Result<bool, Error> {
+    pub fn check_finished(&mut self) -> Result<bool, Error> {
         let status = self.child
             .try_wait()
             .with_context(|_| WaitFailed)

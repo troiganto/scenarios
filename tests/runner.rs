@@ -119,6 +119,12 @@ impl Runner {
     }
 }
 
+impl Default for Runner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 /// The type returned by `Runner::output()`.
 ///

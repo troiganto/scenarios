@@ -131,7 +131,7 @@ impl<'a> Iterator for FinishedIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         // Iterate until we've traversed the entire vector.
         while self.index < self.queue.len() {
-            let is_finished = self.queue[self.index].is_finished();
+            let is_finished = self.queue[self.index].check_finished();
             match is_finished {
                 // No matter whether the child is finished or waiting
                 // on it gives an error -- we eject it in both cases.

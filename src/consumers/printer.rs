@@ -18,7 +18,7 @@ use std::io::{self, Write};
 use scenarios::Scenario;
 
 /// The string pattern that gets replaced in `Printer::template`.
-const PATTERN: &'static str = "{}";
+const PATTERN: &str = "{}";
 
 /// A consumer of [`Scenario`]s that prints their names to stdout.
 ///

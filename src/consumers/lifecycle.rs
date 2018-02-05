@@ -159,7 +159,7 @@ where
     I: IntoIterator,
     D: LoopDriver<I::Item>,
 {
-    for item in items.into_iter() {
+    for item in items {
         // Get a token from the stock. If there are none left, wait for a child
         // to finish and take its token.
         let token = if let Some(token) = stock.get_token() {
