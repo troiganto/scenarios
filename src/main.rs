@@ -31,8 +31,11 @@
 extern crate clap;
 #[macro_use]
 extern crate failure;
+extern crate futures;
 extern crate glob;
 extern crate num_cpus;
+extern crate tokio_core;
+extern crate tokio_process;
 
 
 pub mod app;
