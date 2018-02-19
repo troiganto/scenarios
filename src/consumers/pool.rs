@@ -17,6 +17,7 @@ use std::thread;
 use std::time;
 
 use failure::Error;
+use futures::{Async, Future, Poll};
 
 use super::children::{FinishedChild, RunningChild};
 use super::tokens::PoolToken;
@@ -152,5 +153,144 @@ impl<'a> Iterator for FinishedIter<'a> {
             }
         }
         None
+    }
+}
+
+
+pub struct LimitedVec<T>(Vec<T>);
+
+impl<T> LimitedVec<T> {
+    pub fn new(size: usize) -> Self {
+        LimitedVec(Vec::with_capacity(size))
+    }
+
+    pub fn max_len(&self) -> usize {
+        self.0.capacity()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.len() >= self.max_len()
+    }
+
+    pub fn into_inner(self) -> Vec<T> {
+        self.0
+    }
+
+    pub fn as_slice(&self) -> &[T] {
+        self.0.as_slice()
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [T] {
+        self.0.as_mut_slice()
+    }
+
+    pub fn iter(&self) -> ::std::slice::Iter<T> {
+        self.as_slice().iter()
+    }
+
+    pub fn iter_mut(&mut self) -> ::std::slice::IterMut<T> {
+        self.as_mut_slice().iter_mut()
+    }
+
+    pub fn try_push(&mut self, item: T) -> Result<(), T> {
+        if self.len() < self.max_len() {
+            self.0.push(item);
+            Ok(())
+        } else {
+            Err(item)
+        }
+    }
+
+    pub fn force_push(&mut self, item: T) {
+        assert!(self.try_push(item).is_ok(), "limited vec is full");
+    }
+
+    pub fn try_push_from(&mut self, item: &mut Option<T>) {
+        if self.len() < self.max_len() {
+            self.0.push(item.take().unwrap());
+        }
+    }
+
+    pub fn remove(&mut self, index: usize) -> T {
+        self.0.remove(index)
+    }
+
+    pub fn select(&mut self) -> Select<T> {
+        assert!(!self.is_empty());
+        Select(self)
+    }
+}
+
+impl<T> IntoIterator for LimitedVec<T> {
+    type Item = T;
+    type IntoIter = ::std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a LimitedVec<T> {
+    type Item = &'a T;
+    type IntoIter = ::std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut LimitedVec<T> {
+    type Item = &'a mut T;
+    type IntoIter = ::std::slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+impl<T> ::std::ops::Deref for LimitedVec<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<T> ::std::ops::DerefMut for LimitedVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_slice()
+    }
+}
+
+
+pub struct Select<'a, T: 'a>(&'a mut LimitedVec<T>);
+
+impl<'a, T> Future for Select<'a, T>
+where
+    T: 'a + Future,
+{
+    type Item = T::Item;
+    type Error = T::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let item = self.0
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, item)| match item.poll() {
+                Ok(Async::NotReady) => None,
+                Ok(Async::Ready(result)) => Some((i, Ok(result))),
+                Err(err) => Some((i, Err(err))),
+            })
+            .next();
+        match item {
+            Some((index, result)) => {
+                self.0.remove(index);
+                match result {
+                    Ok(result) => Ok(Async::Ready(result)),
+                    Err(err) => Err(err),
+                }
+            },
+            None => Ok(Async::NotReady),
+        }
     }
 }
