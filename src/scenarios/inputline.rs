@@ -79,7 +79,10 @@ impl FromStr for InputLine {
     fn from_str(line: &str) -> Result<Self, Self::Err> {
         let line = line.trim();
         if is_comment(line) {
-            let line = InputLine { content: None, eq_pos: 0 };
+            let line = InputLine {
+                content: None,
+                eq_pos: 0,
+            };
             Ok(line)
         } else if let Some(name) = try_parse_header(line) {
             let line = InputLine {
@@ -138,9 +141,12 @@ impl InputLine {
     /// If this is a definition line, return its split contents.
     pub fn definition(&self) -> Option<(&str, &str)> {
         if self.eq_pos > 0 {
-            self.content
-                .as_ref()
-                .map(|s| (s[..self.eq_pos].trim_right(), s[self.eq_pos + 1..].trim_left()),)
+            self.content.as_ref().map(|s| {
+                (
+                    s[..self.eq_pos].trim_right(),
+                    s[self.eq_pos + 1..].trim_left(),
+                )
+            })
         } else {
             None
         }

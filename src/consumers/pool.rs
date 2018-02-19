@@ -13,13 +13,13 @@
 // permissions and limitations under the License.
 
 
-use std::time;
 use std::thread;
+use std::time;
 
 use failure::Error;
 
+use super::children::{FinishedChild, RunningChild};
 use super::tokens::PoolToken;
-use super::children::{RunningChild, FinishedChild};
 
 
 /// A pool of processes which can run concurrently.
@@ -50,7 +50,9 @@ impl ProcessPool {
 
     /// Creates a new, empty process pool with a given capacity.
     pub fn with_capacity(cap: usize) -> Self {
-        Self { queue: Vec::with_capacity(cap) }
+        Self {
+            queue: Vec::with_capacity(cap),
+        }
     }
 
     /// Returns `true` if no child processes are currently in the pool.
@@ -121,7 +123,10 @@ pub struct FinishedIter<'a> {
 impl<'a> FinishedIter<'a> {
     /// Creates a new iterator that borrows `pool`'s queue.
     fn new(pool: &'a mut ProcessPool) -> Self {
-        FinishedIter { queue: &mut pool.queue, index: 0 }
+        FinishedIter {
+            queue: &mut pool.queue,
+            index: 0,
+        }
     }
 }
 

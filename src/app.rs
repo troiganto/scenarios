@@ -16,7 +16,7 @@
 //! Contains all calls to `clap` so it doesn't clutter `main()`.
 
 
-use clap::{self, Arg, App, AppSettings};
+use clap::{self, App, AppSettings, Arg};
 
 
 /// Returns an [`App`] instance.
@@ -199,9 +199,7 @@ pub fn print_short_help(app: clap::App) {
 
 /// Prints the information given by the `--help` argument.
 pub fn print_long_help(app: clap::App) {
-    app.after_help(LONG_EXPLANATION)
-        .print_long_help()
-        .unwrap();
+    app.after_help(LONG_EXPLANATION).print_long_help().unwrap();
     println!("\n");
 }
 

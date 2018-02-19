@@ -16,22 +16,22 @@
 //! Provides types that accept scenarios and do something with them.
 
 
-mod pool;
-mod tokens;
-mod printer;
 mod children;
-mod lifecycle;
 mod commandline;
+mod lifecycle;
+mod pool;
+mod printer;
+mod tokens;
 
 
-pub use self::printer::Printer;
+pub use self::children::FinishedChild;
+pub use self::children::PreparedChild;
+pub use self::children::RunningChild;
 pub use self::commandline::CommandLine;
 pub use self::commandline::Options as CommandLineOptions;
 pub use self::lifecycle::LoopDriver;
 pub use self::lifecycle::loop_in_process_pool;
 pub use self::pool::ProcessPool;
+pub use self::printer::Printer;
 pub use self::tokens::PoolToken;
 pub use self::tokens::TokenStock;
-pub use self::children::PreparedChild;
-pub use self::children::RunningChild;
-pub use self::children::FinishedChild;

@@ -13,9 +13,9 @@
 // permissions and limitations under the License.
 
 
-use std::io;
 use std::ffi::OsStr;
-use std::process::{Command, Child, ExitStatus};
+use std::io;
+use std::process::{Child, Command, ExitStatus};
 
 use failure::{Error, ResultExt};
 
@@ -47,7 +47,11 @@ impl<'a> PreparedChild<'a> {
     /// the name of the program to run. Both names are only used to
     /// build error messages.
     pub fn new(name: String, program: &'a OsStr, command: Command) -> Self {
-        PreparedChild { name, program, command }
+        PreparedChild {
+            name,
+            program,
+            command,
+        }
     }
 
     /// Turns `self` into a [`RunningChild`].
@@ -68,12 +72,10 @@ impl<'a> PreparedChild<'a> {
         let program = self.program;
         let result = self.command
             .spawn()
-            .map_err(
-                |cause| {
-                    let name = program.to_string_lossy().into_owned();
-                    SpawnFailed { cause, name }
-                },
-            )
+            .map_err(|cause| {
+                let name = program.to_string_lossy().into_owned();
+                SpawnFailed { cause, name }
+            })
             .with_context(|_| ScenarioNotStarted(name.clone()))
             .map_err(Error::from);
         match result {

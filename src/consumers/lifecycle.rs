@@ -15,10 +15,10 @@
 
 use failure::Error;
 
+use super::children::FinishedChild;
+use super::children::PreparedChild;
 use super::pool::ProcessPool;
 use super::tokens::TokenStock;
-use super::children::PreparedChild;
-use super::children::FinishedChild;
 
 
 /// The interface used by [`loop_in_process_pool()`] for callbacks.

@@ -140,7 +140,10 @@ impl<S: AsRef<OsStr>> CommandLine<S> {
         if command_line.is_empty() {
             None
         } else {
-            CommandLine { command_line, options }.into()
+            CommandLine {
+                command_line,
+                options,
+            }.into()
         }
     }
 

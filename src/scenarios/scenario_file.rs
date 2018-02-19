@@ -13,17 +13,17 @@
 // permissions and limitations under the License.
 
 
-use std::fs::File;
+use std::collections::hash_map::{Entry, HashMap};
 use std::ffi::OsStr;
-use std::path::Path;
+use std::fs::File;
 use std::io::{self, BufRead};
-use std::collections::hash_map::{HashMap, Entry};
+use std::path::Path;
 
 use failure::{Error, Fail, ResultExt};
 
+use super::inputline::InputLine;
 use super::location::ErrorLocation;
 use super::scenario::Scenario;
-use super::inputline::InputLine;
 
 
 /// Type that represents a scenario file.
@@ -76,8 +76,7 @@ impl<'a> ScenarioFile<'a> {
         if path == Path::new("-") {
             Self::new(stdin.lock(), "<stdin>".as_ref(), is_strict)
         } else {
-            let file = File::open(path)
-                .with_context(|_| ErrorLocation::new(path.to_owned()))?;
+            let file = File::open(path).with_context(|_| ErrorLocation::new(path.to_owned()))?;
             let file = io::BufReader::new(file);
             Self::new(file, path.as_ref(), is_strict)
         }
@@ -275,7 +274,8 @@ impl<'a> Iterator for ScenariosIter<'a> {
     /// - a variable was defined outside of any scenario.
     fn next(&mut self) -> Option<Self::Item> {
         match self.next_scenario()
-                  .with_context(|_| self.location.to_owned()) {
+            .with_context(|_| self.location.to_owned())
+        {
             Ok(None) => None,
             Ok(Some(scenario)) => Some(Ok(scenario)),
             Err(context) => Some(Err(Error::from(context))),

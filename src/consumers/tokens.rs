@@ -42,7 +42,9 @@ impl TokenStock {
         if max_tokens == 0 {
             panic!("invalid maximum number of tokens: 0")
         }
-        Self { num_tokens: max_tokens }
+        Self {
+            num_tokens: max_tokens,
+        }
     }
 
     /// Returns the number of currently available tokens.

@@ -44,7 +44,10 @@ pub struct ErrorLocation<P: AsRef<Path>> {
 impl<P: AsRef<Path>> ErrorLocation<P> {
     /// Creates a new error location without line number information.
     pub fn new(filename: P) -> Self {
-        Self { filename, lineno: 0 }
+        Self {
+            filename,
+            lineno: 0,
+        }
     }
 
     /// Creates a new error location for a given file and line.

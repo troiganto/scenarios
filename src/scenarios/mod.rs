@@ -23,16 +23,16 @@
 //! [`ScenarioFile`]: ./struct.ScenarioFile.html
 
 
+mod filter;
 mod inputline;
 mod location;
 mod scenario;
 mod scenario_file;
-mod filter;
 
-pub use self::filter::NameFilter;
 pub use self::filter::Mode as FilterMode;
-pub use self::scenario::Scenario;
+pub use self::filter::NameFilter;
 pub use self::scenario::MergeOptions;
+pub use self::scenario::Scenario;
 pub use self::scenario_file::ScenarioFile;
 pub use self::scenario_file::ScenariosIter;
 

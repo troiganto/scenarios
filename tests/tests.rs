@@ -452,8 +452,8 @@ scenarios: not all scenarios terminated successfully
 }
 
 mod invalid_args {
-    use runner::Runner;
     use runner::OsStringExt;
+    use runner::Runner;
     use std::ffi::OsString;
 
 

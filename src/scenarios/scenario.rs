@@ -13,9 +13,9 @@
 // permissions and limitations under the License.
 
 
-use std::fmt::{self, Display};
 use std::borrow::{Borrow, Cow};
 use std::collections::hash_map::{self, HashMap};
+use std::fmt::{self, Display};
 
 
 /// Named set of environment variable definitions.
@@ -240,13 +240,19 @@ pub struct MergeOptions<'a> {
 
 impl<'a> MergeOptions<'a> {
     fn new(delimiter: &'a str, is_strict: bool) -> Self {
-        MergeOptions { delimiter, is_strict }
+        MergeOptions {
+            delimiter,
+            is_strict,
+        }
     }
 }
 
 impl<'a> Default for MergeOptions<'a> {
     fn default() -> Self {
-        MergeOptions { delimiter: ", ", is_strict: true }
+        MergeOptions {
+            delimiter: ", ",
+            is_strict: true,
+        }
     }
 }
 
@@ -434,9 +440,7 @@ mod tests {
                                 \"B\"";
         let mut merged = make_dummy_scenario("A", &["a"]);
         let added = make_dummy_scenario("B", &["a"]);
-        let error = merged
-            .merge(&added, MergeOptions::default())
-            .unwrap_err();
+        let error = merged.merge(&added, MergeOptions::default()).unwrap_err();
         assert_eq!(expected_message, error.to_string());
     }
 

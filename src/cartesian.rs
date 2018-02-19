@@ -67,12 +67,13 @@ where
     &'a C: IntoIterator<Item = &'a T>,
 {
     // We start with fresh iterators and a `next_item` full of `None`s.
-    let mut iterators = collections
-        .iter()
-        .map(<&C>::into_iter)
-        .collect::<Vec<_>>();
+    let mut iterators = collections.iter().map(<&C>::into_iter).collect::<Vec<_>>();
     let next_item = iterators.iter_mut().map(Iterator::next).collect();
-    Product { collections, iterators, next_item }
+    Product {
+        collections,
+        iterators,
+        next_item,
+    }
 }
 
 
@@ -158,7 +159,7 @@ where
                 self.iterators[i] = self.collections[i].into_iter();
                 if let Some(elt) = self.iterators[i].next() {
                     next_item[i] = elt;
-                    // Roll over to the next sub-iterator.
+                // Roll over to the next sub-iterator.
                 } else {
                     // Should never happen: The freshly restarted
                     // sub-iterator is already empty.
@@ -181,9 +182,7 @@ mod tests {
         /// len(V1)×len(V2)×...len(VN)`.
         fn assert_length<T>(vectors: &Vec<Vec<T>>) {
             let expected_len: usize = vectors.iter().map(Vec::len).product();
-            let actual_len: usize = cartesian::product(vectors)
-                .collect::<Vec<Vec<&T>>>()
-                .len();
+            let actual_len: usize = cartesian::product(vectors).collect::<Vec<Vec<&T>>>().len();
             assert_eq!(expected_len, actual_len);
         }
 
