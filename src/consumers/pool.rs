@@ -19,7 +19,7 @@ use std::time;
 use failure::Error;
 use futures::{Async, Future, Poll};
 
-use super::children::{FinishedChild, RunningChild};
+use super::children::{FinishedChild, PreparedChild, RunningChild};
 use super::tokens::PoolToken;
 
 
@@ -62,8 +62,14 @@ impl ProcessPool {
     }
 
     /// Adds a new child process to the pool.
-    pub fn push(&mut self, child: RunningChild) {
-        self.queue.push(child)
+    pub fn try_push(
+        &mut self,
+        child: PreparedChild,
+        token: PoolToken,
+    ) -> Result<(), (Error, PoolToken)> {
+        let child = child.spawn(token)?;
+        self.queue.push(child);
+        Ok(())
     }
 
     /// Returns an iterator over all finished child processes.

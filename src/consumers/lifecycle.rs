@@ -174,8 +174,11 @@ where
         };
         // Start a new child process.
         let prepared_child = driver.prepare_child(item)?;
-        let running_child = prepared_child.spawn_or_return_token(token, stock)?;
-        pool.push(running_child);
+        pool.try_push(prepared_child, token)
+            .map_err(|(err, token)| {
+                stock.return_token(token);
+                err
+            })?;
     }
     // If nothing has gone wrong until now, we wait for all child processes
     // to terminate.
