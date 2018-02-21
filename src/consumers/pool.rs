@@ -20,7 +20,7 @@ use failure::Error;
 use futures::{Async, Future, Poll};
 
 use super::children::{FinishedChild, PreparedChild, RunningChild};
-use super::tokens::PoolToken;
+use super::tokens::{PoolToken, TokenStock};
 
 
 /// A pool of processes which can run concurrently.
@@ -41,6 +41,7 @@ use super::tokens::PoolToken;
 pub struct ProcessPool {
     /// The list of currently running child processes.
     queue: Vec<RunningChild>,
+    stock: TokenStock,
 }
 
 impl ProcessPool {
@@ -53,6 +54,7 @@ impl ProcessPool {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             queue: Vec::with_capacity(cap),
+            stock: TokenStock::default(),
         }
     }
 
@@ -67,7 +69,11 @@ impl ProcessPool {
         child: PreparedChild,
         token: PoolToken,
     ) -> Result<(), (Error, PoolToken)> {
-        let child = child.spawn(token)?;
+        let child = match child.spawn() {
+            Ok(child) => child,
+            Err(err) => return Err((err, token)),
+        };
+        self.stock.return_token(token);
         self.queue.push(child);
         Ok(())
     }
@@ -122,7 +128,7 @@ impl Drop for ProcessPool {
 /// This iterator is returned by `ProcessPool::reap()`.
 pub struct FinishedIter<'a> {
     /// The borrowed queue of child processes.
-    queue: &'a mut Vec<RunningChild>,
+    pool: &'a mut ProcessPool,
     /// The current iteration index.
     index: usize,
 }
@@ -130,10 +136,8 @@ pub struct FinishedIter<'a> {
 impl<'a> FinishedIter<'a> {
     /// Creates a new iterator that borrows `pool`'s queue.
     fn new(pool: &'a mut ProcessPool) -> Self {
-        FinishedIter {
-            queue: &mut pool.queue,
-            index: 0,
-        }
+        let index = 0;
+        FinishedIter { pool, index }
     }
 }
 
@@ -142,16 +146,17 @@ impl<'a> Iterator for FinishedIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Iterate until we've traversed the entire vector.
-        while self.index < self.queue.len() {
-            let is_finished = self.queue[self.index].check_finished();
+        while self.index < self.pool.queue.len() {
+            let is_finished = self.pool.queue[self.index].check_finished();
             match is_finished {
                 // No matter whether the child is finished or waiting
                 // on it gives an error -- we eject it in both cases.
                 // (Note: This assumes that waiting twice on the same
                 // child gives the same error.)
                 Ok(true) | Err(_) => {
-                    let child = self.queue.swap_remove(self.index);
-                    return Some(child.finish());
+                    let child = self.pool.queue.swap_remove(self.index);
+                    let token = self.pool.stock.get_token().unwrap();
+                    return Some((child.finish(), token));
                 },
                 Ok(false) => {
                     self.index += 1;

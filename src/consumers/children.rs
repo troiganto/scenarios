@@ -19,8 +19,6 @@ use std::process::{Child, Command, ExitStatus};
 
 use failure::{Error, ResultExt};
 
-use super::tokens::{PoolToken, TokenStock};
-
 
 /// Wrapper type combining `std::process::Command` with a name.
 ///
@@ -67,43 +65,17 @@ impl<'a> PreparedChild<'a> {
     ///
     /// [`RunningChild`]: ./struct.RunningChild.html
     /// [`PoolToken`]: ./struct.PoolToken.html
-    pub fn spawn(mut self, token: PoolToken) -> Result<RunningChild, (Error, PoolToken)> {
+    pub fn spawn(mut self) -> Result<RunningChild, Error> {
         let name = self.name;
         let program = self.program;
-        let result = self.command
+        let child = self.command
             .spawn()
             .map_err(|cause| {
                 let name = program.to_string_lossy().into_owned();
                 SpawnFailed { cause, name }
             })
-            .with_context(|_| ScenarioNotStarted(name.clone()))
-            .map_err(Error::from);
-        match result {
-            Ok(child) => Ok(RunningChild { name, child, token }),
-            Err(err) => Err((err, token)),
-        }
-    }
-
-    /// Like `spawn`, but may return the token to the [`TokenStock`].
-    ///
-    /// If this function fails, it returns the given [`PoolToken`] to
-    /// the given [`TokenStock`] instead of returning it by-value. This
-    /// gives this function a simpler return type.
-    ///
-    /// [`TokenStock`]: ./struct.TokenStock.html
-    /// [`PoolToken`]: ./struct.PoolToken.html
-    pub fn spawn_or_return_token(
-        self,
-        token: PoolToken,
-        stock: &mut TokenStock,
-    ) -> Result<RunningChild, Error> {
-        match self.spawn(token) {
-            Ok(child) => Ok(child),
-            Err((err, token)) => {
-                stock.return_token(token);
-                Err(err)
-            },
-        }
+            .with_context(|_| ScenarioNotStarted(name.clone()))?;
+        Ok(RunningChild { name, child })
     }
 }
 
@@ -118,7 +90,6 @@ impl<'a> PreparedChild<'a> {
 pub struct RunningChild {
     name: String,
     child: Child,
-    token: PoolToken,
 }
 
 impl RunningChild {
@@ -150,15 +121,13 @@ impl RunningChild {
     ///
     /// [`FinishedChild`]: ./struct.FinishedChild.html
     /// [`PoolToken`]: ./struct.PoolToken.html
-    pub fn finish(mut self) -> (Result<FinishedChild, Error>, PoolToken) {
-        let result = self.child
+    pub fn finish(self) -> Result<FinishedChild, Error> {
+        let Self { mut child, name } = self;
+        let status = child
             .wait()
             .with_context(|_| WaitFailed)
-            .with_context(|_| ScenarioFailed(self.name.clone()))
-            .map_err(Error::from);
-        let Self { name, token, .. } = self;
-        let result = result.map(|status| FinishedChild { name, status });
-        (result, token)
+            .with_context(|_| ScenarioFailed(name.clone()))?;
+        Ok(FinishedChild { name, status })
     }
 }
 
