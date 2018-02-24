@@ -16,7 +16,7 @@
 use std::mem;
 
 use failure;
-use futures::{Async, Future, Poll};
+use futures::{Async, Future, Poll, Stream};
 
 use super::children::RunningChild;
 
@@ -51,6 +51,25 @@ impl ProcessPool {
     /// Returns `true` if no child processes are currently in the pool.
     pub fn is_empty(&self) -> bool {
         self.children.is_empty()
+    }
+
+    /// Returns a stream of finished children.
+    ///
+    /// The returned stream is not-ready as long as all children are
+    /// still running. Whenever a child finishes, the stream becomes
+    /// ready and returns it. Once the pool is empty, the stream
+    /// returns `Ok(Async::Ready(None))`.
+    ///
+    /// # Errors
+    ///
+    /// Waiting on a child may fail. This is highly dependent on the
+    /// platform you are running on. If waiting on a child fails, the
+    /// child is still removed from the pool, so you may continue to
+    /// poll the stream.
+    ///
+    /// [`FinishedChild`]: ./struct.FinishedChild.html
+    pub fn reap_all(&mut self) -> Join<RunningChild> {
+        Join(&mut self.children)
     }
 
     /// Adds a new child process to the pool, if possible.
@@ -162,15 +181,33 @@ impl<'a, T: 'a> Slot<'a, T> {
 }
 
 
+/// Future returned by [`ProcessPool::reap_all()`].
+///
+/// [`ProcessPool::reap_all()`]: ./struct.ProcessPool.html#method.reap_all
+pub struct Join<'a, T: 'a>(&'a mut Vec<T>);
+
+impl<'a, T: 'a + Future> Stream for Join<'a, T> {
+    type Item = T::Item;
+    type Error = T::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        if self.0.is_empty() {
+            Ok(Async::Ready(None))
+        } else {
+            Select(self.0)
+                .poll()
+                .map(|result: Async<T::Item>| result.map(Some))
+        }
+    }
+}
+
+
 /// Future returned by [`ProcessPool::reap_one()`].
 ///
 /// [`ProcessPool::reap_one()`]: ./struct.ProcessPool.html#method.reap_one
 pub struct Select<'a, T: 'a>(&'a mut Vec<T>);
 
-impl<'a, T> Future for Select<'a, T>
-where
-    T: 'a + Future,
-{
+impl<'a, T: 'a + Future> Future for Select<'a, T> {
     type Item = T::Item;
     type Error = T::Error;
 

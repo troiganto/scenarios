@@ -14,6 +14,7 @@
 
 
 use failure::{Error, ResultExt};
+use futures::Stream;
 use tokio_core::reactor::Core;
 
 use super::children::FinishedChild;
@@ -129,11 +130,13 @@ where
     if let Err(err) = loop_result {
         driver.on_loop_failed(err);
     }
-    // Wait for any remaining children, in case the actual loop bailed.
-    while !pool.is_empty() {
-        let finished_child = core.run(pool.reap_one());
-        driver.on_cleanup_reap(finished_child);
-    }
+    // Wait for all remaining children and catch all errors.
+    enum Never {}
+    let _: Result<(), Never> = core.run(
+        pool.reap_all()
+            .then(Ok)
+            .for_each(|result| Ok(driver.on_cleanup_reap(result))),
+    );
     driver.on_finish()
 }
 
@@ -173,10 +176,7 @@ where
     }
     // If nothing has gone wrong until now, we wait for all child
     // processes to terminate, bailing on the first error.
-    while !pool.is_empty() {
-        let finished_child = core.run(pool.reap_one())?;
-        driver.on_reap(finished_child)?;
-    }
+    core.run(pool.reap_all().for_each(|child| driver.on_reap(child)))?;
     Ok(())
 }
 
