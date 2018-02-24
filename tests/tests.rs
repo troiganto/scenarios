@@ -443,10 +443,10 @@ scenarios: not all scenarios terminated successfully
 scenarios:   -> reason: job exited with non-zero exit code: 1
 scenarios: not all scenarios terminated successfully
 "#;
-        let expected_stdout = "2\n3\n4\n5\n";
+        let expected_stdout = ["2\n3\n4\n5\n", "3\n2\n4\n5\n"];
         let output = stop_at_scenario("1", &["--keep-going", "--jobs=3"]).output();
         assert_eq!(expected_stderr, &output.stderr);
-        assert_eq!(expected_stdout, &output.stdout);
+        assert!(expected_stdout.contains(&output.stdout.as_str()), "{}", &output.stdout);
         assert!(!output.status.success());
     }
 }
