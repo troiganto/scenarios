@@ -44,9 +44,8 @@ pub struct ProcessPool {
 impl ProcessPool {
     /// Creates a new, empty process pool of the given maximum size.
     pub fn new(capacity: usize) -> Self {
-        Self {
-            children: Vec::with_capacity(capacity),
-        }
+        let children = Vec::with_capacity(capacity);
+        Self { children }
     }
 
     /// Returns `true` if no child processes are currently in the pool.
@@ -73,7 +72,7 @@ impl ProcessPool {
     /// [`Slot`]: ./struct.Slot.html
     /// [`FinishedChild`]: ./struct.FinishedChild.html
     pub fn get_slot(&mut self) -> WaitForSlot<RunningChild> {
-        WaitForSlot::new(&mut self.children)
+        WaitForSlot::Unpolled(&mut self.children)
     }
 
     /// Returns one finished child.
@@ -111,13 +110,6 @@ pub enum WaitForSlot<'a, T: 'a> {
     Waiting(Select<'a, T>),
     /// The future has finished and will never give a slot again.
     SlotTaken,
-}
-
-impl<'a, T: 'a> WaitForSlot<'a, T> {
-    /// Create a new object in the initial state.
-    fn new(vec: &'a mut Vec<T>) -> Self {
-        WaitForSlot::Unpolled(vec)
-    }
 }
 
 impl<'a, T> Future for WaitForSlot<'a, T>
@@ -186,19 +178,24 @@ where
         // Find the first future that has become ready.
         let item = self.0
             .iter_mut()
+            .map(Future::poll)
             .enumerate()
-            .filter_map(|(i, item)| match item.poll() {
-                Ok(Async::NotReady) => None,
-                Ok(Async::Ready(result)) => Some((i, Ok(result))),
-                Err(err) => Some((i, Err(err))),
-            })
-            .next();
+            .find(|&(_, ref poll)| is_ready_or_err(poll));
         // If there is one, discard it and return its result.
         if let Some((index, result)) = item {
             self.0.swap_remove(index);
-            result.map(Async::Ready)
+            result
         } else {
             Ok(Async::NotReady)
         }
+    }
+}
+
+
+/// Returns `true` if a `poll` indicates that its future has finished.
+fn is_ready_or_err<T, E>(poll: &Poll<T, E>) -> bool {
+    match *poll {
+        Ok(Async::Ready(_)) | Err(_) => true,
+        Ok(Async::NotReady) => false,
     }
 }
