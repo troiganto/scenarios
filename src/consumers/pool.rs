@@ -13,10 +13,9 @@
 // permissions and limitations under the License.
 
 
-use std::fmt;
 use std::mem;
 
-use failure::{Error, Fail};
+use failure;
 use futures::{Async, Future, Poll};
 
 use super::children::RunningChild;
@@ -124,10 +123,10 @@ impl<'a, T: 'a> WaitForSlot<'a, T> {
 impl<'a, T> Future for WaitForSlot<'a, T>
 where
     T: 'a + Future,
-    Error: From<T::Error>,
+    failure::Error: From<T::Error>,
 {
     type Item = (Slot<'a, T>, Option<T::Item>);
-    type Error = WaitForSlotFailed;
+    type Error = failure::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         // Set the future to a dummy state while we're processing it.
@@ -140,59 +139,15 @@ where
                 Select(vec)
             },
             WaitForSlot::Waiting(select) => select,
-            WaitForSlot::SlotTaken => return Err(WaitForSlotFailed::SlotTaken),
+            WaitForSlot::SlotTaken => panic!("slot already taken"),
         };
         // The pool is full, check if a spot has become free.
-        let async = select.poll().map_err(|err| WaitForSlotFailed::FutureFailed(err.into()))?;
-        let async = match async {
-            Async::Ready(result) => Async::Ready((Slot(select.0), Some(result))),
+        match select.poll()? {
+            Async::Ready(result) => Ok(Async::Ready((Slot(select.0), Some(result)))),
             Async::NotReady => {
                 *self = WaitForSlot::Waiting(select);
-                Async::NotReady
+                Ok(Async::NotReady)
             },
-        };
-        Ok(async)
-    }
-}
-
-
-/// An error occured while waiting for a slot in the process pool.
-///
-/// This is the error type used by [`WaitForSlot`].
-///
-/// [`WaitForSlot`]: ./enum.WaitForSlot.html
-#[derive(Debug)]
-pub enum WaitForSlotFailed {
-    /// The slot has been taken by a previous call to `poll()`.
-    SlotTaken,
-    /// An error occured while waiting for a slot to become free.
-    FutureFailed(Error),
-}
-
-impl WaitForSlotFailed {
-    /// If something else has caused the error, return it.
-    pub fn into_inner(self) -> Option<Error> {
-        match self {
-            WaitForSlotFailed::SlotTaken => None,
-            WaitForSlotFailed::FutureFailed(err) => Some(err),
-        }
-    }
-}
-
-impl fmt::Display for WaitForSlotFailed {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            WaitForSlotFailed::SlotTaken => write!(f, "waiting for a free spot failed"),
-            WaitForSlotFailed::FutureFailed(_) => write!(f, "error while waiting on child"),
-        }
-    }
-}
-
-impl Fail for WaitForSlotFailed {
-    fn cause(&self) -> Option<&Fail> {
-        match *self {
-            WaitForSlotFailed::SlotTaken => None,
-            WaitForSlotFailed::FutureFailed(ref err) => Some(err.cause()),
         }
     }
 }
