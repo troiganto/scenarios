@@ -29,10 +29,10 @@ use super::children::RunningChild;
 /// remove them from the pool.
 ///
 /// # Panics
-/// As a safety measure, this type panics if it is dropped while still
-/// containing child processes. You must ensure that the pool is empty
-/// before dropping it – for example by calling [`wait_reap()`] until
-/// it returns `None`.
+/// In debug mode, this type panics if it is dropped while still
+/// containing child processes. In release mode, any remaining child
+/// processes are killed. It is highly advisable to empty the pool
+/// before dropping it.
 ///
 /// [`RunningChild`]: ./struct.RunningChild.html
 /// [`wait_reap()`]: #method.wait_reap
@@ -96,13 +96,8 @@ impl ProcessPool {
 }
 
 impl Drop for ProcessPool {
-    /// Executes the destructor for this type.
-    ///
-    /// The destructor panics if the pool is not empty.
     fn drop(&mut self) {
-        if !self.is_empty() {
-            panic!("dropping a non-empty process pool");
-        }
+        debug_assert!(self.is_empty(), "dropping a non-empty process pool");
     }
 }
 
