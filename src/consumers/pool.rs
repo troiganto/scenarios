@@ -13,14 +13,13 @@
 // permissions and limitations under the License.
 
 
-use std::thread;
-use std::time;
+use std::fmt;
+use std::mem;
 
-use failure::Error;
+use failure::{Error, Fail};
 use futures::{Async, Future, Poll};
 
-use super::children::{FinishedChild, PreparedChild, RunningChild};
-use super::tokens::{PoolToken, TokenStock};
+use super::children::RunningChild;
 
 
 /// A pool of processes which can run concurrently.
@@ -40,51 +39,30 @@ use super::tokens::{PoolToken, TokenStock};
 #[derive(Debug, Default)]
 pub struct ProcessPool {
     /// The list of currently running child processes.
-    queue: Vec<RunningChild>,
-    stock: TokenStock,
+    children: Vec<RunningChild>,
 }
 
 impl ProcessPool {
-    /// Creates a new, empty process pool.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates a new, empty process pool with a given capacity.
-    pub fn with_capacity(cap: usize) -> Self {
+    /// Creates a new, empty process pool of the given maximum size.
+    pub fn new(capacity: usize) -> Self {
         Self {
-            queue: Vec::with_capacity(cap),
-            stock: TokenStock::default(),
+            children: Vec::with_capacity(capacity),
         }
     }
 
     /// Returns `true` if no child processes are currently in the pool.
     pub fn is_empty(&self) -> bool {
-        self.queue.is_empty()
+        self.children.is_empty()
     }
 
-    /// Adds a new child process to the pool.
-    pub fn try_push(
-        &mut self,
-        child: PreparedChild,
-        token: PoolToken,
-    ) -> Result<(), (Error, PoolToken)> {
-        let child = match child.spawn() {
-            Ok(child) => child,
-            Err(err) => return Err((err, token)),
-        };
-        self.stock.return_token(token);
-        self.queue.push(child);
-        Ok(())
-    }
-
-    /// Returns an iterator over all finished child processes.
+    /// Adds a new child process to the pool, if possible.
     ///
-    /// Each call to `FinishedIter::next()` removes
-    /// `Some((child, token))` from the pool. If all child processes
-    /// are still running, the returned iterator is empty.
-    pub fn reap(&mut self) -> FinishedIter {
-        FinishedIter::new(self)
+    /// The returned future is not-ready as long as the pool is full.
+    /// If it becomes ready, it returns a `Slot` that can be used to
+    /// add a new child to the pool. If space has been made by waiting
+    /// for another child to finish, it is also returned.
+    pub fn get_slot(&mut self) -> WaitForSlot<RunningChild> {
+        WaitForSlot::new(&mut self.children)
     }
 
     /// Waits for any child process to finish.
@@ -96,18 +74,8 @@ impl ProcessPool {
     /// # Errors
     /// If waiting on any child fails, this function returns the error
     /// that occurred.
-    pub fn wait_reap(&mut self) -> Option<(Result<FinishedChild, Error>, PoolToken)> {
-        if self.is_empty() {
-            return None;
-        }
-        loop {
-            // `child` is only `None` if *no* child has finished. Wait.
-            let child = self.reap().next();
-            if child.is_some() {
-                return child;
-            }
-            thread::sleep(time::Duration::from_millis(10));
-        }
+    pub fn reap_one(&mut self) -> Select<RunningChild> {
+        Select(&mut self.children)
     }
 }
 
@@ -123,158 +91,95 @@ impl Drop for ProcessPool {
 }
 
 
-/// An iterator over the finished child processes in a `ProcessPool`.
-///
-/// This iterator is returned by `ProcessPool::reap()`.
-pub struct FinishedIter<'a> {
-    /// The borrowed queue of child processes.
-    pool: &'a mut ProcessPool,
-    /// The current iteration index.
-    index: usize,
+pub enum WaitForSlot<'a, T: 'a> {
+    SlotTaken,
+    Unpolled(&'a mut Vec<T>),
+    Waiting(Select<'a, T>),
 }
 
-impl<'a> FinishedIter<'a> {
-    /// Creates a new iterator that borrows `pool`'s queue.
-    fn new(pool: &'a mut ProcessPool) -> Self {
-        let index = 0;
-        FinishedIter { pool, index }
+impl<'a, T: 'a> WaitForSlot<'a, T> {
+    fn new(vec: &'a mut Vec<T>) -> Self {
+        WaitForSlot::Unpolled(vec)
     }
 }
 
-impl<'a> Iterator for FinishedIter<'a> {
-    type Item = (Result<FinishedChild, Error>, PoolToken);
+impl<'a, T> Future for WaitForSlot<'a, T>
+where
+    T: 'a + Future,
+    Error: From<T::Error>,
+{
+    type Item = (Slot<'a, T>, Option<T::Item>);
+    type Error = WaitForSlotFailed;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // Iterate until we've traversed the entire vector.
-        while self.index < self.pool.queue.len() {
-            let is_finished = self.pool.queue[self.index].check_finished();
-            match is_finished {
-                // No matter whether the child is finished or waiting
-                // on it gives an error -- we eject it in both cases.
-                // (Note: This assumes that waiting twice on the same
-                // child gives the same error.)
-                Ok(true) | Err(_) => {
-                    let child = self.pool.queue.swap_remove(self.index);
-                    let token = self.pool.stock.get_token().unwrap();
-                    return Some((child.finish(), token));
-                },
-                Ok(false) => {
-                    self.index += 1;
-                },
-            }
-        }
-        None
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let future = mem::replace(self, WaitForSlot::SlotTaken);
+        let mut select = match future {
+            WaitForSlot::SlotTaken => return Err(WaitForSlotFailed::SlotTaken),
+            WaitForSlot::Unpolled(vec) => {
+                if vec.len() < vec.capacity() {
+                    return Ok(Async::Ready((Slot(vec), None)));
+                }
+                Select(vec)
+            },
+            WaitForSlot::Waiting(select) => select,
+        };
+        let async = select.poll().map_err(Error::from).map_err(WaitForSlotFailed::FutureFailed)?;
+        let async = match async {
+            Async::Ready(result) => Async::Ready((Slot(select.0), Some(result))),
+            Async::NotReady => {
+                *self = WaitForSlot::Waiting(select);
+                Async::NotReady
+            },
+        };
+        Ok(async)
     }
 }
 
+#[derive(Debug)]
+pub enum WaitForSlotFailed {
+    SlotTaken,
+    FutureFailed(Error),
+}
 
-pub struct LimitedVec<T>(Vec<T>);
-
-impl<T> LimitedVec<T> {
-    pub fn new(size: usize) -> Self {
-        LimitedVec(Vec::with_capacity(size))
-    }
-
-    pub fn max_len(&self) -> usize {
-        self.0.capacity()
-    }
-
-    pub fn is_full(&self) -> bool {
-        self.len() >= self.max_len()
-    }
-
-    pub fn into_inner(self) -> Vec<T> {
-        self.0
-    }
-
-    pub fn as_slice(&self) -> &[T] {
-        self.0.as_slice()
-    }
-
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
-        self.0.as_mut_slice()
-    }
-
-    pub fn iter(&self) -> ::std::slice::Iter<T> {
-        self.as_slice().iter()
-    }
-
-    pub fn iter_mut(&mut self) -> ::std::slice::IterMut<T> {
-        self.as_mut_slice().iter_mut()
-    }
-
-    pub fn try_push(&mut self, item: T) -> Result<(), T> {
-        if self.len() < self.max_len() {
-            self.0.push(item);
-            Ok(())
-        } else {
-            Err(item)
+impl WaitForSlotFailed {
+    pub fn into_inner(self) -> Option<Error> {
+        match self {
+            WaitForSlotFailed::SlotTaken => None,
+            WaitForSlotFailed::FutureFailed(err) => Some(err),
         }
     }
+}
 
-    pub fn force_push(&mut self, item: T) {
-        assert!(self.try_push(item).is_ok(), "limited vec is full");
-    }
-
-    pub fn try_push_from(&mut self, item: &mut Option<T>) {
-        if self.len() < self.max_len() {
-            self.0.push(item.take().unwrap());
+impl fmt::Display for WaitForSlotFailed {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            WaitForSlotFailed::SlotTaken => write!(f, "waiting for a free spot failed"),
+            WaitForSlotFailed::FutureFailed(_) => write!(f, "error while waiting on child"),
         }
     }
-
-    pub fn remove(&mut self, index: usize) -> T {
-        self.0.remove(index)
-    }
-
-    pub fn select(&mut self) -> Select<T> {
-        assert!(!self.is_empty());
-        Select(self)
-    }
 }
 
-impl<T> IntoIterator for LimitedVec<T> {
-    type Item = T;
-    type IntoIter = ::std::vec::IntoIter<T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl<'a, T> IntoIterator for &'a LimitedVec<T> {
-    type Item = &'a T;
-    type IntoIter = ::std::slice::Iter<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.as_slice().iter()
-    }
-}
-
-impl<'a, T> IntoIterator for &'a mut LimitedVec<T> {
-    type Item = &'a mut T;
-    type IntoIter = ::std::slice::IterMut<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
-
-impl<T> ::std::ops::Deref for LimitedVec<T> {
-    type Target = [T];
-
-    fn deref(&self) -> &Self::Target {
-        self.as_slice()
-    }
-}
-
-impl<T> ::std::ops::DerefMut for LimitedVec<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.as_mut_slice()
+impl Fail for WaitForSlotFailed {
+    fn cause(&self) -> Option<&Fail> {
+        match *self {
+            WaitForSlotFailed::SlotTaken => None,
+            WaitForSlotFailed::FutureFailed(ref err) => Some(err.cause()),
+        }
     }
 }
 
 
-pub struct Select<'a, T: 'a>(&'a mut LimitedVec<T>);
+pub struct Slot<'a, T: 'a>(&'a mut Vec<T>);
+
+impl<'a, T: 'a> Slot<'a, T> {
+    pub fn fill(self, item: T) {
+        debug_assert!(self.0.len() < self.0.capacity());
+        self.0.push(item);
+    }
+}
+
+
+pub struct Select<'a, T: 'a>(&'a mut Vec<T>);
 
 impl<'a, T> Future for Select<'a, T>
 where
@@ -295,7 +200,7 @@ where
             .next();
         match item {
             Some((index, result)) => {
-                self.0.remove(index);
+                self.0.swap_remove(index);
                 match result {
                     Ok(result) => Ok(Async::Ready(result)),
                     Err(err) => Err(err),

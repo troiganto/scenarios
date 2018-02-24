@@ -13,13 +13,12 @@
 // permissions and limitations under the License.
 
 
-use failure::Error;
+use failure::{Error, ResultExt};
+use tokio_core::reactor::Core;
 
 use super::children::FinishedChild;
 use super::children::PreparedChild;
 use super::pool::ProcessPool;
-use super::tokens::TokenStock;
-
 
 /// The interface used by [`loop_in_process_pool()`] for callbacks.
 ///
@@ -124,16 +123,17 @@ where
     D: LoopDriver<I::Item>,
 {
     // Initialize the control structures.
-    let mut stock = TokenStock::new(driver.max_num_of_children());
-    let mut pool = ProcessPool::new();
+    let mut pool = ProcessPool::new(driver.max_num_of_children());
+    let mut core = Core::new().context(TokioInitFailed)?;
     // Perform the actual loop.
-    let loop_result = loop_inner(&mut stock, &mut pool, items, &mut driver);
+    let loop_result = loop_inner(&mut core, &mut pool, items, &mut driver);
     if let Err(err) = loop_result {
         driver.on_loop_failed(err);
     }
     // If any children are left, wait for them.
-    while let Some((child, _)) = pool.wait_reap() {
-        driver.on_cleanup_reap(child);
+    while !pool.is_empty() {
+        let finished_child = core.run(pool.reap_one());
+        driver.on_cleanup_reap(finished_child);
     }
     driver.on_finish()
 }
@@ -150,7 +150,7 @@ where
 ///
 /// [`loop_in_process_pool()`]: ./fn.loop_in_process_pool.html
 fn loop_inner<I, D>(
-    stock: &mut TokenStock,
+    core: &mut Core,
     pool: &mut ProcessPool,
     items: I,
     driver: &mut D,
@@ -160,31 +160,24 @@ where
     D: LoopDriver<I::Item>,
 {
     for item in items {
-        // Get a token from the stock. If there are none left, wait for a child
-        // to finish and take its token.
-        let token = if let Some(token) = stock.get_token() {
-            token
-        } else {
-            // This `unwrap()` is safe because otherwise, that would mean there are
-            // no tokens at all.
-            let (finished_child, token) = pool.wait_reap().unwrap();
-            let finished_child = finished_child?;
+        let (slot, finished_child) = core.run(pool.get_slot())?;
+        if let Some(finished_child) = finished_child {
             driver.on_reap(finished_child)?;
-            token
-        };
-        // Start a new child process.
-        let prepared_child = driver.prepare_child(item)?;
-        pool.try_push(prepared_child, token)
-            .map_err(|(err, token)| {
-                stock.return_token(token);
-                err
-            })?;
+        }
+        let child = driver.prepare_child(item)?;
+        let child = child.spawn(&core.handle())?;
+        slot.fill(child);
     }
     // If nothing has gone wrong until now, we wait for all child processes
     // to terminate.
-    while let Some((finished_child, _)) = pool.wait_reap() {
-        let finished_child = finished_child?;
+    while !pool.is_empty() {
+        let finished_child = core.run(pool.reap_one())?;
         driver.on_reap(finished_child)?;
     }
     Ok(())
 }
+
+/// The Tokio event loop could not be started
+#[derive(Debug, Fail)]
+#[fail(display = "could not start event loop")]
+pub struct TokioInitFailed;

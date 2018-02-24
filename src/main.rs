@@ -31,6 +31,7 @@
 extern crate clap;
 #[macro_use]
 extern crate failure;
+#[macro_use]
 extern crate futures;
 extern crate glob;
 extern crate num_cpus;

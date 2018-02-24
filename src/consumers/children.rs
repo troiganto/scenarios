@@ -15,9 +15,13 @@
 
 use std::ffi::OsStr;
 use std::io;
-use std::process::{Child, Command, ExitStatus};
+use std::mem;
+use std::process::{Command, ExitStatus};
 
 use failure::{Error, ResultExt};
+use futures::{Async, Future, Poll};
+use tokio_core::reactor::Handle;
+use tokio_process::{Child, CommandExt};
 
 
 /// Wrapper type combining `std::process::Command` with a name.
@@ -65,11 +69,11 @@ impl<'a> PreparedChild<'a> {
     ///
     /// [`RunningChild`]: ./struct.RunningChild.html
     /// [`PoolToken`]: ./struct.PoolToken.html
-    pub fn spawn(mut self) -> Result<RunningChild, Error> {
+    pub fn spawn(mut self, handle: &Handle) -> Result<RunningChild, Error> {
         let name = self.name;
         let program = self.program;
         let child = self.command
-            .spawn()
+            .spawn_async(handle)
             .map_err(|cause| {
                 let name = program.to_string_lossy().into_owned();
                 SpawnFailed { cause, name }
@@ -93,41 +97,23 @@ pub struct RunningChild {
 }
 
 impl RunningChild {
-    /// Checks whether this child has finished running.
-    ///
-    /// This waits for the child in a non-blocking manner. If it has
-    /// finished running, this returns `Ok(true)`. If the child is
-    /// still running, this returns `Ok(false)`.
-    ///
-    /// # Errors
-    /// Waiting can theoretically fail. It is not clear under which
-    /// circumstances this can happen and what the correct procedure
-    /// would be.
-    pub fn check_finished(&mut self) -> Result<bool, Error> {
-        let status = self.child
-            .try_wait()
-            .with_context(|_| WaitFailed)
-            .with_context(|_| ScenarioFailed(self.name.clone()))?;
-        Ok(status.is_some())
+    fn take_name(&mut self) -> String {
+        mem::replace(&mut self.name, String::new())
     }
+}
 
-    /// Waits for `self` to turn into a [`FinishedChild`].
-    ///
-    /// This also returns the [`PoolToken`] that the child had.
-    ///
-    /// # Errors
-    /// Waiting can theoretically fail. The [`PoolToken`] is returned
-    /// in any case.
-    ///
-    /// [`FinishedChild`]: ./struct.FinishedChild.html
-    /// [`PoolToken`]: ./struct.PoolToken.html
-    pub fn finish(self) -> Result<FinishedChild, Error> {
-        let Self { mut child, name } = self;
-        let status = child
-            .wait()
+impl Future for RunningChild {
+    type Item = FinishedChild;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let status = self.child
+            .poll()
             .with_context(|_| WaitFailed)
-            .with_context(|_| ScenarioFailed(name.clone()))?;
-        Ok(FinishedChild { name, status })
+            .with_context(|_| ScenarioFailed(self.take_name()));
+        let status = try_ready!(status);
+        let name = self.take_name();
+        Ok(Async::Ready(FinishedChild { name, status }))
     }
 }
 
