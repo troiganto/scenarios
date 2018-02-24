@@ -27,14 +27,12 @@ use tokio_process::{Child, CommandExt};
 /// Wrapper type combining `std::process::Command` with a name.
 ///
 /// This type is returned by [`CommandLine`] and represents a process
-/// that is ready to start. Starting it requires a [`PoolToken`],
-/// however, to limit the number of processes that can run in parallel.
+/// that is ready to start.
 ///
 /// Note that the names associated with this child are only used to
 /// provide meaningful error messages if something goes wrong.
 ///
 /// [`CommandLine`]: ./struct.CommandLine.html
-/// [`PoolToken`]: ./struct.PoolToken.html
 #[derive(Debug)]
 pub struct PreparedChild<'a> {
     name: String,
@@ -58,17 +56,13 @@ impl<'a> PreparedChild<'a> {
 
     /// Turns `self` into a [`RunningChild`].
     ///
-    /// This starts a process from the wrapped `Command` and combines
-    /// the running process with the passed token into a
-    /// [`RunningChild`].
+    /// This starts a process from the wrapped `Command`.
     ///
     /// # Errors
-    /// Spawning a process can fail. In such a case, this function
-    /// returns both the error that occurred, and the passed
-    /// [`PoolToken`]. This ensures that no token is lost.
+    /// This function fails if the wrapped call to
+    /// `std::process:Command::spawn()` fails.
     ///
     /// [`RunningChild`]: ./struct.RunningChild.html
-    /// [`PoolToken`]: ./struct.PoolToken.html
     pub fn spawn(mut self, handle: &Handle) -> Result<RunningChild, Error> {
         let name = self.name;
         let program = self.program;
@@ -84,11 +78,14 @@ impl<'a> PreparedChild<'a> {
 }
 
 
-/// Wrapper type combining `std::process::Child` with name and token.
+/// Wrapper combining an asynchronous [`Child`] with a name.
 ///
 /// This type is returned by [`PreparedChild::spawn()`] and represents
-/// a process that is currently running.
+/// a process that is currently running. Because it implements
+/// [`Future`], you can wait on it to finish.
 ///
+/// [`Child`]: ../../tokio_process/struct.Child.html
+/// [`Future`]: ../../futures/future/trait.Future.html
 /// [`PreparedChild::spawn()`]: ./struct.PreparedChild.html#method.spawn
 #[derive(Debug)]
 pub struct RunningChild {
@@ -118,7 +115,7 @@ impl Future for RunningChild {
 }
 
 
-/// Wrapper type combining `std::process::ExitStatus` with a name.
+/// Wrapper combining an `std::process::ExitStatus` with a name.
 ///
 /// This type is returned by [`RunningChild::finish()`] and represents
 /// a process that has finished running. It can be turned into a

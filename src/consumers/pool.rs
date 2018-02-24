@@ -58,22 +58,38 @@ impl ProcessPool {
     /// Adds a new child process to the pool, if possible.
     ///
     /// The returned future is not-ready as long as the pool is full.
-    /// If it becomes ready, it returns a `Slot` that can be used to
-    /// add a new child to the pool. If space has been made by waiting
-    /// for another child to finish, it is also returned.
+    /// When it becomes ready, it returns a [`Slot`] that can be used
+    /// to add a new child to the pool. If the slot has become
+    /// available because another child finished running, the
+    /// [`FinishedChild`] is returned as well.
+    ///
+    /// # Errors
+    ///
+    /// Waiting on a child may fail. This is highly dependent on the
+    /// platform you are running on. If waiting on a child fails, no
+    /// slot is returned, but the child is still removed from the pool.
+    /// You may call this function again after handling the error and
+    /// get a free slot immediately.
+    ///
+    /// [`Slot`]: ./struct.Slot.html
+    /// [`FinishedChild`]: ./struct.FinishedChild.html
     pub fn get_slot(&mut self) -> WaitForSlot<RunningChild> {
         WaitForSlot::new(&mut self.children)
     }
 
-    /// Waits for any child process to finish.
+    /// Returns one finished child.
     ///
-    /// This call blocks until at least one child process is finished
-    /// and then returns that process. If the pool is empty, this
-    /// function returns `None`.
+    /// The returned future is not-ready until at least one child in
+    /// this pool finishes running. When it becomes ready, the
+    /// [`FinishedChild`] is returned.
     ///
     /// # Errors
-    /// If waiting on any child fails, this function returns the error
-    /// that occurred.
+    ///
+    /// Waiting on a child may fail. This is highly dependent on the
+    /// platform you are running on. If waiting on a child fails, the
+    /// child is still removed from the pool.
+    ///
+    /// [`FinishedChild`]: ./struct.FinishedChild.html
     pub fn reap_one(&mut self) -> Select<RunningChild> {
         Select(&mut self.children)
     }
@@ -91,13 +107,20 @@ impl Drop for ProcessPool {
 }
 
 
+/// Future returned by [`ProcessPool::get_slot()`].
+///
+/// [`ProcessPool::get_slot()`]: ./struct.ProcessPool.html#method.get_slot
 pub enum WaitForSlot<'a, T: 'a> {
-    SlotTaken,
+    /// Initial state.
     Unpolled(&'a mut Vec<T>),
+    /// The pool is full and we are waiting on a spot to become free.
     Waiting(Select<'a, T>),
+    /// The future has finished and will never give a slot again.
+    SlotTaken,
 }
 
 impl<'a, T: 'a> WaitForSlot<'a, T> {
+    /// Create a new object in the initial state.
     fn new(vec: &'a mut Vec<T>) -> Self {
         WaitForSlot::Unpolled(vec)
     }
@@ -112,9 +135,9 @@ where
     type Error = WaitForSlotFailed;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        // Set the future to a dummy state while we're processing it.
         let future = mem::replace(self, WaitForSlot::SlotTaken);
         let mut select = match future {
-            WaitForSlot::SlotTaken => return Err(WaitForSlotFailed::SlotTaken),
             WaitForSlot::Unpolled(vec) => {
                 if vec.len() < vec.capacity() {
                     return Ok(Async::Ready((Slot(vec), None)));
@@ -122,8 +145,10 @@ where
                 Select(vec)
             },
             WaitForSlot::Waiting(select) => select,
+            WaitForSlot::SlotTaken => return Err(WaitForSlotFailed::SlotTaken),
         };
-        let async = select.poll().map_err(Error::from).map_err(WaitForSlotFailed::FutureFailed)?;
+        // The pool is full, check if a spot has become free.
+        let async = select.poll().map_err(|err| WaitForSlotFailed::FutureFailed(err.into()))?;
         let async = match async {
             Async::Ready(result) => Async::Ready((Slot(select.0), Some(result))),
             Async::NotReady => {
@@ -135,13 +160,22 @@ where
     }
 }
 
+
+/// An error occured while waiting for a slot in the process pool.
+///
+/// This is the error type used by [`WaitForSlot`].
+///
+/// [`WaitForSlot`]: ./enum.WaitForSlot.html
 #[derive(Debug)]
 pub enum WaitForSlotFailed {
+    /// The slot has been taken by a previous call to `poll()`.
     SlotTaken,
+    /// An error occured while waiting for a slot to become free.
     FutureFailed(Error),
 }
 
 impl WaitForSlotFailed {
+    /// If something else has caused the error, return it.
     pub fn into_inner(self) -> Option<Error> {
         match self {
             WaitForSlotFailed::SlotTaken => None,
@@ -169,9 +203,16 @@ impl Fail for WaitForSlotFailed {
 }
 
 
+/// Type representing an available spot in a [`ProcessPool`].
+///
+/// This type ensures that, even in the face of errors, the process
+/// pool can never grow beyond its capacity.
+///
+/// [`ProcessPool`]: ./struct.ProcessPool.html
 pub struct Slot<'a, T: 'a>(&'a mut Vec<T>);
 
 impl<'a, T: 'a> Slot<'a, T> {
+    /// Fills the slot by pushing an item to the queue.
     pub fn fill(self, item: T) {
         debug_assert!(self.0.len() < self.0.capacity());
         self.0.push(item);
@@ -179,6 +220,9 @@ impl<'a, T: 'a> Slot<'a, T> {
 }
 
 
+/// Future returned by [`ProcessPool::reap_one()`].
+///
+/// [`ProcessPool::reap_one()`]: ./struct.ProcessPool.html#method.reap_one
 pub struct Select<'a, T: 'a>(&'a mut Vec<T>);
 
 impl<'a, T> Future for Select<'a, T>
@@ -189,6 +233,7 @@ where
     type Error = T::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        // Find the first future that has become ready.
         let item = self.0
             .iter_mut()
             .enumerate()
@@ -198,15 +243,12 @@ where
                 Err(err) => Some((i, Err(err))),
             })
             .next();
-        match item {
-            Some((index, result)) => {
-                self.0.swap_remove(index);
-                match result {
-                    Ok(result) => Ok(Async::Ready(result)),
-                    Err(err) => Err(err),
-                }
-            },
-            None => Ok(Async::NotReady),
+        // If there is one, discard it and return its result.
+        if let Some((index, result)) = item {
+            self.0.swap_remove(index);
+            result.map(Async::Ready)
+        } else {
+            Ok(Async::NotReady)
         }
     }
 }

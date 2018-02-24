@@ -99,9 +99,9 @@ pub trait LoopDriver<Item> {
 /// Handle items from an iterator, starting a child process for each.
 ///
 /// This goes through the `items` and starts one child process for each
-/// of them. The [`PoolToken`] mechanism limits the number of processes
-/// that can run at any time. A [`LoopDriver`] type is used to drive
-/// the loop and answer callbacks.
+/// of them. The  number of processes that can run at any time is
+/// limited. A [`LoopDriver`] type is used to drive the loop and answer
+/// callbacks.
 ///
 /// # Errors
 ///
@@ -115,7 +115,6 @@ pub trait LoopDriver<Item> {
 /// - waiting on a child process fails;
 /// - any one of the calls to the [`LoopDriver`] fails.
 ///
-/// [`PoolToken`]: ./struct.PoolToken.html
 /// [`LoopDriver`]: ./trait.LoopDriver.html
 pub fn loop_in_process_pool<I, D>(items: I, mut driver: D) -> Result<(), Error>
 where
@@ -130,7 +129,7 @@ where
     if let Err(err) = loop_result {
         driver.on_loop_failed(err);
     }
-    // If any children are left, wait for them.
+    // Wait for any remaining children, in case the actual loop bailed.
     while !pool.is_empty() {
         let finished_child = core.run(pool.reap_one());
         driver.on_cleanup_reap(finished_child);
@@ -146,6 +145,7 @@ where
 /// Cleaning up the pool is left to the caller in that case.
 ///
 /// # Errors
+///
 /// Same as for [`loop_in_process_pool()`].
 ///
 /// [`loop_in_process_pool()`]: ./fn.loop_in_process_pool.html
@@ -159,6 +159,9 @@ where
     I: IntoIterator,
     D: LoopDriver<I::Item>,
 {
+    // For each item, wait for a free slot in the proces pool and push
+    // it. If spawning or waiting fails, we always bail. All other
+    // failures are the loop driver's business.
     for item in items {
         let (slot, finished_child) = core.run(pool.get_slot())?;
         if let Some(finished_child) = finished_child {
@@ -168,8 +171,8 @@ where
         let child = child.spawn(&core.handle())?;
         slot.fill(child);
     }
-    // If nothing has gone wrong until now, we wait for all child processes
-    // to terminate.
+    // If nothing has gone wrong until now, we wait for all child
+    // processes to terminate, bailing on the first error.
     while !pool.is_empty() {
         let finished_child = core.run(pool.reap_one())?;
         driver.on_reap(finished_child)?;
