@@ -132,11 +132,10 @@ where
     }
     // Wait for all remaining children and catch all errors.
     enum Never {}
-    let _: Result<(), Never> = core.run(
-        pool.reap_all()
-            .then(Ok)
-            .for_each(|result| Ok(driver.on_cleanup_reap(result))),
-    );
+    let _: Result<(), Never> = core.run(pool.reap_all().then(Ok).for_each(|result| {
+        driver.on_cleanup_reap(result);
+        Ok(())
+    }));
     driver.on_finish()
 }
 
