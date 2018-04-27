@@ -76,7 +76,8 @@ impl NameFilter {
             require_literal_separator: false,
             require_literal_leading_dot: false,
         };
-        let matches = self.pattern
+        let matches = self
+            .pattern
             .as_ref()
             .map(|p| p.matches_with(scenario.name(), &options))
             .unwrap_or(false);

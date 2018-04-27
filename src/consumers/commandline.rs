@@ -13,16 +13,17 @@
 // permissions and limitations under the License.
 
 
-use std::ffi::OsStr;
-use std::process::Command;
+use std::{ffi::OsStr, process::Command};
 
 use failure::{Error, ResultExt};
 
 use scenarios::Scenario;
 use trytostr::OsStrExt;
 
-use super::Printer;
-use super::children::{PreparedChild, ScenarioNotStarted};
+use super::{
+    children::{PreparedChild, ScenarioNotStarted},
+    Printer,
+};
 
 
 /// The name of the environment variable to hold the scenario name.
@@ -143,7 +144,8 @@ impl<S: AsRef<OsStr>> CommandLine<S> {
             CommandLine {
                 command_line,
                 options,
-            }.into()
+            }
+            .into()
         }
     }
 
@@ -263,7 +265,10 @@ impl<S: AsRef<OsStr>> CommandLine<S> {
 
 /// The error type used by `with_scenario()`.
 #[derive(Debug, Fail)]
-#[fail(display = "use of reserved variable name: \"{}\" (strict mode is enabled)", _0)]
+#[fail(
+    display = "use of reserved variable name: \"{}\" (strict mode is enabled)",
+    _0
+)]
 pub struct ReservedVarName(String);
 
 
@@ -287,7 +292,8 @@ mod tests {
     fn test_insert_name() {
         let mut cl = CommandLine::new(["echo", "a cool {}!"].iter()).unwrap();
         cl.options_mut().insert_name_in_args = true;
-        let output = cl.create_command(iter::empty::<(&str, &str)>(), "name")
+        let output = cl
+            .create_command(iter::empty::<(&str, &str)>(), "name")
             .expect("CommandLine::create_command failed")
             .output()
             .expect("Child::output failed");

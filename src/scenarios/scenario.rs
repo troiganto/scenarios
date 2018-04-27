@@ -13,9 +13,11 @@
 // permissions and limitations under the License.
 
 
-use std::borrow::{Borrow, Cow};
-use std::collections::hash_map::{self, HashMap};
-use std::fmt::{self, Display};
+use std::{
+    borrow::{Borrow, Cow},
+    collections::hash_map::{self, HashMap},
+    fmt::{self, Display},
+};
 
 
 /// Named set of environment variable definitions.
@@ -328,8 +330,10 @@ pub enum ScenarioError {
 /// [`Scenario::merge()`]: ./struct.Scenario.html#method.merge
 /// [`Scenario::merge_all()`]: ./struct.Scenario.html#method.merge_all
 #[derive(Debug, Fail)]
-#[fail(display = "variable \"{}\" defined both in scenario \"{}\" and in scenario \"{}\"",
-       varname, left, right)]
+#[fail(
+    display = "variable \"{}\" defined both in scenario \"{}\" and in scenario \"{}\"",
+    varname, left, right
+)]
 pub struct MergeError {
     varname: String,
     left: String,

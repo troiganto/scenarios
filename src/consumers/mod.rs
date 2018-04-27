@@ -24,17 +24,11 @@ mod printer;
 mod tokens;
 
 
-pub use self::children::FinishedChild;
-pub use self::children::PreparedChild;
-pub use self::children::RunningChild;
-pub use self::commandline::CommandLine;
-pub use self::commandline::Options as CommandLineOptions;
-pub use self::lifecycle::LoopDriver;
-pub use self::lifecycle::loop_in_process_pool;
-pub use self::pool::ProcessPool;
-pub use self::pool::Select;
-pub use self::pool::Slot;
-pub use self::pool::WaitForSlot;
-pub use self::printer::Printer;
-pub use self::tokens::PoolToken;
-pub use self::tokens::TokenStock;
+pub use self::{
+    children::{FinishedChild, PreparedChild, RunningChild},
+    commandline::{CommandLine, Options as CommandLineOptions},
+    lifecycle::{loop_in_process_pool, LoopDriver},
+    pool::{ProcessPool, Select, Slot, WaitForSlot},
+    printer::Printer,
+    tokens::{PoolToken, TokenStock},
+};

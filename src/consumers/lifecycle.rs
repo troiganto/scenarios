@@ -17,9 +17,10 @@ use failure::{Error, ResultExt};
 use futures::Stream;
 use tokio_core::reactor::Core;
 
-use super::children::FinishedChild;
-use super::children::PreparedChild;
-use super::pool::ProcessPool;
+use super::{
+    children::{FinishedChild, PreparedChild},
+    pool::ProcessPool,
+};
 
 /// The interface used by [`loop_in_process_pool()`] for callbacks.
 ///

@@ -446,14 +446,17 @@ scenarios: not all scenarios terminated successfully
         let expected_stdout = ["2\n3\n4\n5\n", "3\n2\n4\n5\n"];
         let output = stop_at_scenario("1", &["--keep-going", "--jobs=3"]).output();
         assert_eq!(expected_stderr, &output.stderr);
-        assert!(expected_stdout.contains(&output.stdout.as_str()), "{}", &output.stdout);
+        assert!(
+            expected_stdout.contains(&output.stdout.as_str()),
+            "{}",
+            &output.stdout,
+        );
         assert!(!output.status.success());
     }
 }
 
 mod invalid_args {
-    use runner::OsStringExt;
-    use runner::Runner;
+    use runner::{OsStringExt, Runner};
     use std::ffi::OsString;
 
 

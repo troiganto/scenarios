@@ -15,10 +15,12 @@
 
 #![allow(dead_code)]
 
-use std::env;
-use std::ffi::{OsStr, OsString};
-use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Output};
+use std::{
+    env,
+    ffi::{OsStr, OsString},
+    path::{Path, PathBuf},
+    process::{Command, ExitStatus, Output},
+};
 
 
 /// The name of the executable being tested.
@@ -110,7 +112,8 @@ impl Runner {
 
     /// Runs the command and returns its output.
     pub fn output(&mut self) -> RunResult {
-        let output = self.command
+        let output = self
+            .command
             .env_clear()
             .env("outer_variable", "1")
             .output()
