@@ -131,7 +131,7 @@ impl<'a> ScenarioFile<'a> {
             // number. If we *have* seen it before, we build an error
             // from the header line's content, the current line number
             // and the line number of the previous occurrence.
-            if let Some(header) = line.header() {
+            if let Some(header) = line.as_header() {
                 match seen_headers.entry(header) {
                     Entry::Vacant(entry) => {
                         entry.insert(loc.lineno);
@@ -230,9 +230,9 @@ impl<'a> ScenariosIter<'a> {
     fn next_header_line(&mut self) -> Result<Option<&'a str>, UnexpectedVarDef> {
         while let Some(line) = self.lines.get(self.location.lineno) {
             self.location.lineno += 1;
-            if let Some(header) = line.header() {
+            if let Some(header) = line.as_header() {
                 return Ok(Some(header));
-            } else if let Some(name) = line.definition_name() {
+            } else if let Some((name, _)) = line.as_definition() {
                 return Err(UnexpectedVarDef(name.to_owned()));
             }
         }
@@ -252,7 +252,7 @@ impl<'a> ScenariosIter<'a> {
                 break;
             } else {
                 self.location.lineno += 1;
-                if let Some(parts) = line.definition() {
+                if let Some(parts) = line.as_definition() {
                     return Some(parts);
                 }
             }
