@@ -282,6 +282,21 @@ impl<'a> Iterator for ScenariosIter<'a> {
             Err(context) => Some(Err(Error::from(context))),
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a> ExactSizeIterator for ScenariosIter<'a> {
+    fn len(&self) -> usize {
+        self.lines
+            .iter()
+            .skip(self.location.lineno)
+            .filter(|line| line.is_header())
+            .count()
+    }
 }
 
 
@@ -460,4 +475,16 @@ mod tests {
             "variable definition before the first header: \"a\""
         );
     }
+
+
+    #[test]
+    fn test_exact_size_iterator() {
+        let file = get_scenarios("[first]\n[second]\n\n[third]\n[fourth]").unwrap();
+        let mut scenarios = file.iter();
+        assert_eq!(scenarios.len(), 4);
+        assert_eq!(scenarios.size_hint(), (4, Some(4)));
+        scenarios.next();
+        assert_eq!(scenarios.len(), 3);
+    }
+
 }
