@@ -19,9 +19,8 @@
 //! `scenarios` goes through all possible combinations between them.
 //!
 //! See the README file for more information.
-//!
+//! 
 //! [`scenarios`]: https://github.com/troiganto/scenarios
-
 
 // This is an application and, as such, contains functionality that is
 // not strictly necessary.
@@ -32,25 +31,29 @@
 extern crate clap;
 #[macro_use]
 extern crate failure;
+#[macro_use]
+extern crate futures;
 extern crate glob;
 extern crate num_cpus;
+extern crate tokio_core;
+extern crate tokio_process;
 
 
 pub mod app;
-pub mod logger;
-pub mod trytostr;
 pub mod cartesian;
 pub mod consumers;
+pub mod logger;
 pub mod scenarios;
+pub mod trytostr;
 
 
 use std::ffi::OsStr;
 
-use failure::{ResultExt, Error};
+use failure::{Error, ResultExt};
 
-use trytostr::OsStrExt;
-use consumers::{PreparedChild, FinishedChild};
+use consumers::{FinishedChild, PreparedChild};
 use scenarios::{MergeError, Scenario, ScenarioFile};
+use trytostr::OsStrExt;
 
 
 /// The entry point and wrapper around [`try_main()`].
@@ -125,15 +128,16 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // `NameFilter`. We let errors automatically pass the filter so that we
     // can display them to the user.
     let filter = name_filter_from_args(args)?;
-    let merge_opts = scenarios::MergeOptions { delimiter, is_strict };
+    let merge_opts = scenarios::MergeOptions {
+        delimiter,
+        is_strict,
+    };
     let combos = cartesian::product(&all_scenarios)
         .map(|set| Scenario::merge_all(set, merge_opts))
-        .filter(
-            |result| match *result {
-                Ok(ref scenario) => filter.allows(scenario),
-                Err(_) => true,
-            },
-        );
+        .filter(|result| match *result {
+            Ok(ref scenario) => filter.allows(scenario),
+            Err(_) => true,
+        });
     if args.is_present("exec") {
         let handler = CommandLineHandler::new(args)?;
         consumers::loop_in_process_pool(combos, handler)?;
@@ -180,14 +184,10 @@ where
 {
     let mut printer = consumers::Printer::default();
     if let Some(template) = args.value_of_os("print0") {
-        let template = template
-            .try_to_str()
-            .context("invalid value for --print0")?;
+        let template = template.try_to_str().context("invalid value for --print0")?;
         printer.set_template(template);
     } else if let Some(template) = args.value_of_os("print") {
-        let template = template
-            .try_to_str()
-            .context("invalid value for --print")?;
+        let template = template.try_to_str().context("invalid value for --print")?;
         printer.set_template(template);
     };
     if args.is_present("print0") {
@@ -227,8 +227,8 @@ impl<'a> CommandLineHandler<'a> {
     /// This reads the parsed command-line arguments and initializes
     /// the fields of this struct from them.
     pub fn new(args: &'a clap::ArgMatches) -> Result<Self, Error> {
-        let max_num_of_children = Self::max_num_tokens_from_args(args)
-            .context("invalid value for --jobs")?;
+        let max_num_of_children =
+            Self::max_num_tokens_from_args(args).context("invalid value for --jobs")?;
         let handler = CommandLineHandler {
             any_errors: false,
             max_num_of_children,

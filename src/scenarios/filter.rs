@@ -14,8 +14,8 @@
 
 use std::fmt;
 
-use glob::{self, Pattern, MatchOptions};
 use failure::{Error, ResultExt};
+use glob::{self, MatchOptions, Pattern};
 
 use super::Scenario;
 
@@ -48,7 +48,10 @@ pub struct NameFilter {
 impl NameFilter {
     /// Creates a new filter running in the given mode.
     pub fn new(mode: Mode) -> Self {
-        NameFilter { mode, pattern: None }
+        NameFilter {
+            mode,
+            pattern: None,
+        }
     }
 
     /// Alias for `new(Mode::IgnoreMatching)`.
@@ -198,9 +201,7 @@ mod tests {
     #[test]
     fn test_choose() {
         let names = ["bark", "berk", "birk", "bork", "burk"];
-        let blacklist = NameFilter::new_whitelist()
-            .add_pattern("?[aou]rk")
-            .unwrap();
+        let blacklist = NameFilter::new_whitelist().add_pattern("?[aou]rk").unwrap();
         let filtered = names
             .iter()
             .map(|n| Scenario::new(*n).expect(n))

@@ -43,7 +43,10 @@ impl<'tpl, 'trm> Printer<'tpl, 'trm> {
     /// `"{}"` are replaced by the formatted string. The terminator is
     /// the string that is appended to the template afterwards.
     pub fn new(template: &'tpl str, terminator: &'trm str) -> Self {
-        Printer { template, terminator }
+        Printer {
+            template,
+            terminator,
+        }
     }
 
     /// Creates a new printer that doesn't print anything.
@@ -107,7 +110,10 @@ impl<'a, 'b> Default for Printer<'a, 'b> {
     /// The default values are empty braces `"{}"` for the `template`
     /// and a newline `"\n"` for the `terminator`.
     fn default() -> Self {
-        Printer { template: PATTERN, terminator: "\n" }
+        Printer {
+            template: PATTERN,
+            terminator: "\n",
+        }
     }
 }
 

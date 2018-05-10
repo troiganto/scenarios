@@ -29,9 +29,9 @@
 //! `quiet` flag is set. Should be simple enough to roll out on our
 //! own!
 
+use std::fmt::Display;
 use std::io;
 use std::io::Write;
-use std::fmt::Display;
 
 use failure::Error;
 
@@ -90,15 +90,13 @@ impl<'a> Logger<'a> {
 
     /// First logs an error, then all its causes.
     pub fn log_error_chain(&self, error: &Error) {
-        self.with_lock(
-            |lock| {
-                let mut error = error.cause();
-                writeln!(lock, "{}: error: {}", self.name, error).unwrap();
-                while let Some(cause) = error.cause() {
-                    writeln!(lock, "{}:   -> reason: {}", self.name, cause).unwrap();
-                    error = cause;
-                }
-            },
-        )
+        self.with_lock(|lock| {
+            let mut error = error.cause();
+            writeln!(lock, "{}: error: {}", self.name, error).unwrap();
+            while let Some(cause) = error.cause() {
+                writeln!(lock, "{}:   -> reason: {}", self.name, cause).unwrap();
+                error = cause;
+            }
+        })
     }
 }

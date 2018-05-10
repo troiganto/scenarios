@@ -13,26 +13,26 @@
 // permissions and limitations under the License.
 
 
-use std::io;
 use std::ffi::OsStr;
-use std::process::{Command, Child, ExitStatus};
+use std::io;
+use std::mem;
+use std::process::{Command, ExitStatus};
 
 use failure::{Error, ResultExt};
-
-use super::tokens::{PoolToken, TokenStock};
+use futures::{Async, Future, Poll};
+use tokio_core::reactor::Handle;
+use tokio_process::{Child, CommandExt};
 
 
 /// Wrapper type combining `std::process::Command` with a name.
 ///
 /// This type is returned by [`CommandLine`] and represents a process
-/// that is ready to start. Starting it requires a [`PoolToken`],
-/// however, to limit the number of processes that can run in parallel.
+/// that is ready to start.
 ///
 /// Note that the names associated with this child are only used to
 /// provide meaningful error messages if something goes wrong.
 ///
 /// [`CommandLine`]: ./struct.CommandLine.html
-/// [`PoolToken`]: ./struct.PoolToken.html
 #[derive(Debug)]
 pub struct PreparedChild<'a> {
     name: String,
@@ -47,121 +47,75 @@ impl<'a> PreparedChild<'a> {
     /// the name of the program to run. Both names are only used to
     /// build error messages.
     pub fn new(name: String, program: &'a OsStr, command: Command) -> Self {
-        PreparedChild { name, program, command }
+        PreparedChild {
+            name,
+            program,
+            command,
+        }
     }
 
     /// Turns `self` into a [`RunningChild`].
     ///
-    /// This starts a process from the wrapped `Command` and combines
-    /// the running process with the passed token into a
-    /// [`RunningChild`].
+    /// This starts a process from the wrapped `Command`.
     ///
     /// # Errors
-    /// Spawning a process can fail. In such a case, this function
-    /// returns both the error that occurred, and the passed
-    /// [`PoolToken`]. This ensures that no token is lost.
+    /// This function fails if the wrapped call to
+    /// `std::process:Command::spawn()` fails.
     ///
     /// [`RunningChild`]: ./struct.RunningChild.html
-    /// [`PoolToken`]: ./struct.PoolToken.html
-    pub fn spawn(mut self, token: PoolToken) -> Result<RunningChild, (Error, PoolToken)> {
+    pub fn spawn(mut self, handle: &Handle) -> Result<RunningChild, Error> {
         let name = self.name;
         let program = self.program;
-        let result = self.command
-            .spawn()
-            .map_err(
-                |cause| {
-                    let name = program.to_string_lossy().into_owned();
-                    SpawnFailed { cause, name }
-                },
-            )
-            .with_context(|_| ScenarioNotStarted(name.clone()))
-            .map_err(Error::from);
-        match result {
-            Ok(child) => Ok(RunningChild { name, child, token }),
-            Err(err) => Err((err, token)),
-        }
-    }
-
-    /// Like `spawn`, but may return the token to the [`TokenStock`].
-    ///
-    /// If this function fails, it returns the given [`PoolToken`] to
-    /// the given [`TokenStock`] instead of returning it by-value. This
-    /// gives this function a simpler return type.
-    ///
-    /// [`TokenStock`]: ./struct.TokenStock.html
-    /// [`PoolToken`]: ./struct.PoolToken.html
-    pub fn spawn_or_return_token(
-        self,
-        token: PoolToken,
-        stock: &mut TokenStock,
-    ) -> Result<RunningChild, Error> {
-        match self.spawn(token) {
-            Ok(child) => Ok(child),
-            Err((err, token)) => {
-                stock.return_token(token);
-                Err(err)
-            },
-        }
+        let child = self.command
+            .spawn_async(handle)
+            .map_err(|cause| {
+                let name = program.to_string_lossy().into_owned();
+                SpawnFailed { cause, name }
+            })
+            .with_context(|_| ScenarioNotStarted(name.clone()))?;
+        Ok(RunningChild { name, child })
     }
 }
 
 
-/// Wrapper type combining `std::process::Child` with name and token.
+/// Wrapper combining an asynchronous [`Child`] with a name.
 ///
 /// This type is returned by [`PreparedChild::spawn()`] and represents
-/// a process that is currently running.
+/// a process that is currently running. Because it implements
+/// [`Future`], you can wait on it to finish.
 ///
+/// [`Child`]: ../../tokio_process/struct.Child.html
+/// [`Future`]: ../../futures/future/trait.Future.html
 /// [`PreparedChild::spawn()`]: ./struct.PreparedChild.html#method.spawn
 #[derive(Debug)]
 pub struct RunningChild {
     name: String,
     child: Child,
-    token: PoolToken,
 }
 
 impl RunningChild {
-    /// Checks whether this child has finished running.
-    ///
-    /// This waits for the child in a non-blocking manner. If it has
-    /// finished running, this returns `Ok(true)`. If the child is
-    /// still running, this returns `Ok(false)`.
-    ///
-    /// # Errors
-    /// Waiting can theoretically fail. It is not clear under which
-    /// circumstances this can happen and what the correct procedure
-    /// would be.
-    pub fn check_finished(&mut self) -> Result<bool, Error> {
-        let status = self.child
-            .try_wait()
-            .with_context(|_| WaitFailed)
-            .with_context(|_| ScenarioFailed(self.name.clone()))?;
-        Ok(status.is_some())
+    fn take_name(&mut self) -> String {
+        mem::replace(&mut self.name, String::new())
     }
+}
 
-    /// Waits for `self` to turn into a [`FinishedChild`].
-    ///
-    /// This also returns the [`PoolToken`] that the child had.
-    ///
-    /// # Errors
-    /// Waiting can theoretically fail. The [`PoolToken`] is returned
-    /// in any case.
-    ///
-    /// [`FinishedChild`]: ./struct.FinishedChild.html
-    /// [`PoolToken`]: ./struct.PoolToken.html
-    pub fn finish(mut self) -> (Result<FinishedChild, Error>, PoolToken) {
-        let result = self.child
-            .wait()
+impl Future for RunningChild {
+    type Item = FinishedChild;
+    type Error = Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let status = self.child
+            .poll()
             .with_context(|_| WaitFailed)
-            .with_context(|_| ScenarioFailed(self.name.clone()))
-            .map_err(Error::from);
-        let Self { name, token, .. } = self;
-        let result = result.map(|status| FinishedChild { name, status });
-        (result, token)
+            .with_context(|_| ScenarioFailed(self.take_name()));
+        let status = try_ready!(status);
+        let name = self.take_name();
+        Ok(Async::Ready(FinishedChild { name, status }))
     }
 }
 
 
-/// Wrapper type combining `std::process::ExitStatus` with a name.
+/// Wrapper combining an `std::process::ExitStatus` with a name.
 ///
 /// This type is returned by [`RunningChild::finish()`] and represents
 /// a process that has finished running. It can be turned into a

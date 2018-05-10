@@ -16,9 +16,8 @@
 /// A stock of [`PoolToken`]s.
 ///
 /// This type allows predefining a set of tokens which may be given
-/// out, carried around, and later redeemed. The maximum number of
-/// available tokens is specified at construction and cannot be
-/// changed.
+/// out, carried around, and later redeemed. Tokens from one stock may
+/// be redeemed at another stock.
 ///
 /// [`ProcessPool`] limits the number of child processes that can run
 /// at any time by requiring a token when accepting a new child process
@@ -34,15 +33,9 @@ pub struct TokenStock {
 }
 
 impl TokenStock {
-    /// Creates a new stock with an initial size of `max_tokens`.
-    ///
-    /// # Panics
-    /// This panics if `max_tokens` is `0`.
-    pub fn new(max_tokens: usize) -> Self {
-        if max_tokens == 0 {
-            panic!("invalid maximum number of tokens: 0")
-        }
-        Self { num_tokens: max_tokens }
+    /// Creates a new stock with an initial size of `num_tokens`.
+    pub fn new(num_tokens: usize) -> Self {
+        Self { num_tokens }
     }
 
     /// Returns the number of currently available tokens.
@@ -67,9 +60,9 @@ impl TokenStock {
 }
 
 impl Default for TokenStock {
-    /// The default for a token stock is to contain a single token.
+    /// The default for a token stock is to contain no tokens at all.
     fn default() -> Self {
-        Self::new(1)
+        Self::new(0)
     }
 }
 

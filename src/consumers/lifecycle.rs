@@ -13,13 +13,13 @@
 // permissions and limitations under the License.
 
 
-use failure::Error;
+use failure::{Error, ResultExt};
+use futures::Stream;
+use tokio_core::reactor::Core;
 
-use super::pool::ProcessPool;
-use super::tokens::TokenStock;
-use super::children::PreparedChild;
 use super::children::FinishedChild;
-
+use super::children::PreparedChild;
+use super::pool::ProcessPool;
 
 /// The interface used by [`loop_in_process_pool()`] for callbacks.
 ///
@@ -100,9 +100,9 @@ pub trait LoopDriver<Item> {
 /// Handle items from an iterator, starting a child process for each.
 ///
 /// This goes through the `items` and starts one child process for each
-/// of them. The [`PoolToken`] mechanism limits the number of processes
-/// that can run at any time. A [`LoopDriver`] type is used to drive
-/// the loop and answer callbacks.
+/// of them. The  number of processes that can run at any time is
+/// limited. A [`LoopDriver`] type is used to drive the loop and answer
+/// callbacks.
 ///
 /// # Errors
 ///
@@ -116,7 +116,6 @@ pub trait LoopDriver<Item> {
 /// - waiting on a child process fails;
 /// - any one of the calls to the [`LoopDriver`] fails.
 ///
-/// [`PoolToken`]: ./struct.PoolToken.html
 /// [`LoopDriver`]: ./trait.LoopDriver.html
 pub fn loop_in_process_pool<I, D>(items: I, mut driver: D) -> Result<(), Error>
 where
@@ -124,17 +123,20 @@ where
     D: LoopDriver<I::Item>,
 {
     // Initialize the control structures.
-    let mut stock = TokenStock::new(driver.max_num_of_children());
-    let mut pool = ProcessPool::new();
+    let mut pool = ProcessPool::new(driver.max_num_of_children());
+    let mut core = Core::new().context(TokioInitFailed)?;
     // Perform the actual loop.
-    let loop_result = loop_inner(&mut stock, &mut pool, items, &mut driver);
+    let loop_result = loop_inner(&mut core, &mut pool, items, &mut driver);
     if let Err(err) = loop_result {
         driver.on_loop_failed(err);
     }
-    // If any children are left, wait for them.
-    while let Some((child, _)) = pool.wait_reap() {
-        driver.on_cleanup_reap(child);
-    }
+    // Wait for all remaining children and catch all errors.
+    enum Never {}
+    let _: Result<(), Never> = core.run(
+        pool.reap_all()
+            .then(Ok)
+            .for_each(|result| Ok(driver.on_cleanup_reap(result))),
+    );
     driver.on_finish()
 }
 
@@ -146,11 +148,12 @@ where
 /// Cleaning up the pool is left to the caller in that case.
 ///
 /// # Errors
+///
 /// Same as for [`loop_in_process_pool()`].
 ///
 /// [`loop_in_process_pool()`]: ./fn.loop_in_process_pool.html
 fn loop_inner<I, D>(
-    stock: &mut TokenStock,
+    core: &mut Core,
     pool: &mut ProcessPool,
     items: I,
     driver: &mut D,
@@ -159,29 +162,25 @@ where
     I: IntoIterator,
     D: LoopDriver<I::Item>,
 {
+    // For each item, wait for a free slot in the proces pool and push
+    // it. If spawning or waiting fails, we always bail. All other
+    // failures are the loop driver's business.
     for item in items {
-        // Get a token from the stock. If there are none left, wait for a child
-        // to finish and take its token.
-        let token = if let Some(token) = stock.get_token() {
-            token
-        } else {
-            // This `unwrap()` is safe because otherwise, that would mean there are
-            // no tokens at all.
-            let (finished_child, token) = pool.wait_reap().unwrap();
-            let finished_child = finished_child?;
+        let (slot, finished_child) = core.run(pool.get_slot())?;
+        if let Some(finished_child) = finished_child {
             driver.on_reap(finished_child)?;
-            token
-        };
-        // Start a new child process.
-        let prepared_child = driver.prepare_child(item)?;
-        let running_child = prepared_child.spawn_or_return_token(token, stock)?;
-        pool.push(running_child);
+        }
+        let child = driver.prepare_child(item)?;
+        let child = child.spawn(&core.handle())?;
+        slot.fill(child);
     }
-    // If nothing has gone wrong until now, we wait for all child processes
-    // to terminate.
-    while let Some((finished_child, _)) = pool.wait_reap() {
-        let finished_child = finished_child?;
-        driver.on_reap(finished_child)?;
-    }
+    // If nothing has gone wrong until now, we wait for all child
+    // processes to terminate, bailing on the first error.
+    core.run(pool.reap_all().for_each(|child| driver.on_reap(child)))?;
     Ok(())
 }
+
+/// The Tokio event loop could not be started
+#[derive(Debug, Fail)]
+#[fail(display = "could not start event loop")]
+pub struct TokioInitFailed;
