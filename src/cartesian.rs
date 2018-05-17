@@ -103,6 +103,52 @@ where
         self.advance();
         result
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if self.next_item.is_none() {
+            return (0, Some(0));
+        }
+        let mut lower = 1;
+        let mut upper = Some(1);
+        for (i, top_level_iter) in self.iterators.iter().enumerate() {
+            let (mut current_lower, mut current_upper) = top_level_iter.size_hint();
+            for sub_iter in self.collections[i + 1..].iter().map(<&C>::into_iter) {
+                let (sub_lower, sub_upper) = sub_iter.size_hint();
+                current_lower *= sub_lower;
+                current_upper = match (current_upper, sub_upper) {
+                    (Some(l), Some(r)) => Some(l * r),
+                    _ => None,
+                };
+            }
+            lower += current_lower;
+            upper = match (upper, current_upper) {
+                (Some(l), Some(r)) => Some(l + r),
+                _ => None,
+            };
+        }
+        (lower, upper)
+    }
+}
+
+impl<'a, C, T> ExactSizeIterator for Product<'a, C, T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
+    <&'a C as IntoIterator>::IntoIter: ExactSizeIterator,
+{
+    fn len(&self) -> usize {
+        if self.next_item.is_none() {
+            return 0;
+        }
+        let mut size = 1;
+        for (i, top_level_iter) in self.iterators.iter().enumerate() {
+            let mut current_size = top_level_iter.len();
+            for sub_iter in self.collections[i + 1..].iter().map(<&C>::into_iter) {
+                current_size *= sub_iter.len();
+            }
+            size += current_size;
+        }
+        size
+    }
 }
 
 impl<'a, C, T> Product<'a, C, T>
@@ -181,8 +227,14 @@ mod tests {
         /// Asserts that the `len(V1×V2×...VN) ==
         /// len(V1)×len(V2)×...len(VN)`.
         fn assert_length<T>(vectors: &Vec<Vec<T>>) {
-            let expected_len: usize = vectors.iter().map(Vec::len).product();
-            let actual_len: usize = cartesian::product(vectors).collect::<Vec<Vec<&T>>>().len();
+            let expected_len = vectors.iter().map(Vec::len).product::<usize>();
+            let p = cartesian::product(vectors);
+            let (lower, upper) = p.size_hint();
+            let predicted_len = p.len();
+            let actual_len = p.collect::<Vec<Vec<&T>>>().len();
+            assert_eq!(expected_len, lower);
+            assert_eq!(expected_len, upper.unwrap());
+            assert_eq!(expected_len, predicted_len);
             assert_eq!(expected_len, actual_len);
         }
 
