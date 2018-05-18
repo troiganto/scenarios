@@ -135,19 +135,50 @@ where
     &'a C: IntoIterator<Item = &'a T>,
     <&'a C as IntoIterator>::IntoIter: ExactSizeIterator,
 {
+    /// Calculates the exact number of remaining elements.
+    ///
+    /// The length consists of the following contributions:
+    ///
+    /// - 1 for the `next_item` to be yielded;
+    /// - `X` for each currently active iterator, where X is the
+    ///   product of the iterators length and the sizes of all
+    ///   *collections* to the right of it in the product.
+    ///
+    /// Example
+    /// -------
+    ///
+    /// Assume the Cartesian product `[1, 2, 3]×[1, 2]×[1, 2, 3]`. Upon
+    /// construction, the `Product` type creates three iterators `A`,
+    /// `B`, and `C` ­– one iterator for each array. It also extracts
+    /// one item from each to form `next_item`. Hence, `next_item`
+    /// contributes `1` to the total length. The three iterators
+    /// contribute as follows:
+    ///
+    /// - A: 2 items left × collection of size 2 × collection of size
+    ///   3 = 12;
+    /// - B: 1 item left × collection of size 3 = 3;
+    /// - C: 2 items left = 2.
+    ///
+    /// Thus, we end up with a total length of `1+12+3+2=18`. This is
+    /// the same length we get when multiplying the size of all passed
+    /// collections. (`3*2*3=18`) However, our (complicated) formula
+    /// also works when the iterator has already yielded some elements.
     fn len(&self) -> usize {
         if self.next_item.is_none() {
             return 0;
         }
-        let mut size = 1;
-        for (i, top_level_iter) in self.iterators.iter().enumerate() {
-            let mut current_size = top_level_iter.len();
-            for sub_iter in self.collections[i + 1..].iter().map(<&C>::into_iter) {
-                current_size *= sub_iter.len();
-            }
-            size += current_size;
-        }
-        size
+        1 + self
+            .iterators
+            .iter()
+            .enumerate()
+            .map(|(i, iterator)| {
+                iterator.len()
+                    * self.collections[i + 1..]
+                        .iter()
+                        .map(|c| c.into_iter().len())
+                        .product::<usize>()
+            })
+            .sum::<usize>()
     }
 }
 
