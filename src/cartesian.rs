@@ -104,28 +104,30 @@ where
         result
     }
 
+    /// Calculate bounds on the number of remaining elements.
+    ///
+    /// This is calculated the same way as [`Product::len()`], but uses
+    /// a helper type to deal with the return type of `size_hint()`.
+    /// See there for information on why the used formula is corrected.
+    ///
+    /// [`Product::len()`]: #method.len
     fn size_hint(&self) -> (usize, Option<usize>) {
         if self.next_item.is_none() {
             return (0, Some(0));
         }
-        let mut lower = 1;
-        let mut upper = Some(1);
-        for (i, top_level_iter) in self.iterators.iter().enumerate() {
-            let (mut current_lower, mut current_upper) = top_level_iter.size_hint();
-            for sub_iter in self.collections[i + 1..].iter().map(<&C>::into_iter) {
-                let (sub_lower, sub_upper) = sub_iter.size_hint();
-                current_lower *= sub_lower;
-                current_upper = match (current_upper, sub_upper) {
-                    (Some(l), Some(r)) => Some(l * r),
-                    _ => None,
-                };
-            }
-            lower += current_lower;
-            upper = match (upper, current_upper) {
-                (Some(l), Some(r)) => Some(l + r),
-                _ => None,
-            };
-        }
+        let SizeHint(lower, upper) = SizeHint(1, Some(1))
+            + self
+                .iterators
+                .iter()
+                .enumerate()
+                .map(|(i, iterator)| {
+                    SizeHint::from(iterator)
+                        * self.collections[i + 1..]
+                            .iter()
+                            .map(|c| SizeHint::from(&c.into_iter()))
+                            .product()
+                })
+                .sum();
         (lower, upper)
     }
 }
@@ -246,6 +248,61 @@ where
         }
         // Exhaust this iterator if the above loop `break`s.
         self.next_item = None;
+    }
+}
+
+
+#[derive(Debug)]
+struct SizeHint(usize, Option<usize>);
+
+impl SizeHint {
+    fn into_inner(self) -> (usize, Option<usize>) {
+        (self.0, self.1)
+    }
+}
+
+impl<'a, I: Iterator> From<&'a I> for SizeHint {
+    fn from(iter: &'a I) -> Self {
+        let (lower, upper) = iter.size_hint();
+        SizeHint(lower, upper)
+    }
+}
+
+impl ::std::ops::Add for SizeHint {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let lower = self.0 + other.0;
+        let upper = match (self.1, other.1) {
+            (Some(left), Some(right)) => Some(left + right),
+            _ => None,
+        };
+        SizeHint(lower, upper)
+    }
+}
+
+impl ::std::ops::Mul for SizeHint {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
+        let lower = self.0 * other.0;
+        let upper = match (self.1, other.1) {
+            (Some(left), Some(right)) => Some(left * right),
+            _ => None,
+        };
+        SizeHint(lower, upper)
+    }
+}
+
+impl ::std::iter::Sum for SizeHint {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(SizeHint(0, Some(0)), |acc, x| acc + x)
+    }
+}
+
+impl ::std::iter::Product for SizeHint {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(SizeHint(1, Some(1)), |acc, x| acc * x)
     }
 }
 
