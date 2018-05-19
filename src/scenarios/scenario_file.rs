@@ -18,6 +18,7 @@ use std::{
     ffi::OsStr,
     fs::File,
     io::{self, BufRead},
+    iter::FusedIterator,
     path::Path,
 };
 
@@ -298,6 +299,8 @@ impl<'a> ExactSizeIterator for ScenariosIter<'a> {
             .count()
     }
 }
+
+impl<'a> FusedIterator for ScenariosIter<'a> {}
 
 
 /// The error returned for unexpected variable definitions.

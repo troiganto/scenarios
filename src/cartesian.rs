@@ -184,6 +184,12 @@ where
     }
 }
 
+impl<'a, C, T> ::std::iter::FusedIterator for Product<'a, C, T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
+    <&'a C as IntoIterator>::IntoIter: ExactSizeIterator,
+{}
+
 impl<'a, C, T> Product<'a, C, T>
 where
     &'a C: IntoIterator<Item = &'a T>,
