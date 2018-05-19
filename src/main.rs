@@ -153,7 +153,7 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
 /// Creates a [`NameFilter`] from `args`.
 ///
 /// [`NameFilter`]: ./scenarios/struct.NameFilter.html
-fn name_filter_from_args(args: &clap::ArgMatches) -> Result<scenarios::NameFilter, Error> {
+pub fn name_filter_from_args(args: &clap::ArgMatches) -> Result<scenarios::NameFilter, Error> {
     let filter = if let Some(pattern) = args.value_of_os("choose") {
         let filter = scenarios::NameFilter::new_whitelist();
         pattern
