@@ -62,6 +62,19 @@
 /// let combinations = cartesian::product(&slices);
 /// assert_eq!(combinations.next(), None);
 /// ```
+///
+/// For mathematical correctness, the product of no collections at all
+/// is one empty vector.
+///
+/// ```rust
+/// extern crate scenarios;
+///
+/// use scenarios::cartesian;
+///
+/// let combinations = cartesian::product(&[]);
+/// assert_eq!(combinations.next(), Some(Vec::new()));
+/// assert_eq!(combinations.next(), None);
+/// ```
 pub fn product<'a, C: 'a, T: 'a>(collections: &'a [C]) -> Product<'a, C, T>
 where
     &'a C: IntoIterator<Item = &'a T>,
