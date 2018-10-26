@@ -25,7 +25,7 @@
 // This is an application and, as such, contains functionality that is
 // not strictly necessary.
 #![allow(dead_code)]
-
+#![allow(clippy::new_ret_no_self)]
 
 #[macro_use]
 extern crate clap;
