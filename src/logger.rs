@@ -29,9 +29,10 @@
 //! `quiet` flag is set. Should be simple enough to roll out on our
 //! own!
 
-use std::fmt::Display;
-use std::io;
-use std::io::Write;
+use std::{
+    fmt::Display,
+    io::{self, Write},
+};
 
 use failure::Error;
 

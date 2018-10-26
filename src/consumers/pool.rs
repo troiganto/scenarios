@@ -213,7 +213,8 @@ impl<'a, T: 'a + Future> Future for Select<'a, T> {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         // Find the first future that has become ready.
-        let item = self.0
+        let item = self
+            .0
             .iter_mut()
             .map(Future::poll)
             .enumerate()

@@ -29,12 +29,10 @@ mod location;
 mod scenario;
 mod scenario_file;
 
-pub use self::filter::Mode as FilterMode;
-pub use self::filter::NameFilter;
-pub use self::scenario::MergeOptions;
-pub use self::scenario::Scenario;
-pub use self::scenario_file::ScenarioFile;
-pub use self::scenario_file::ScenariosIter;
+pub use self::{
+    filter::{Mode as FilterMode, NameFilter},
+    scenario::{MergeOptions, Scenario},
+    scenario_file::{ScenarioFile, ScenariosIter},
+};
 
-pub use self::scenario::MergeError;
-pub use self::scenario::ScenarioError;
+pub use self::scenario::{MergeError, ScenarioError};

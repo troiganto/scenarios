@@ -19,13 +19,13 @@
 //! `scenarios` goes through all possible combinations between them.
 //!
 //! See the README file for more information.
-//! 
+//!
 //! [`scenarios`]: https://github.com/troiganto/scenarios
 
 // This is an application and, as such, contains functionality that is
 // not strictly necessary.
 #![allow(dead_code)]
-
+#![allow(clippy::new_ret_no_self)]
 
 #[macro_use]
 extern crate clap;
@@ -108,11 +108,13 @@ pub fn try_main(args: &clap::ArgMatches) -> Result<(), Error> {
     // Collect scenario file names into a vector of vectors of scenarios.
     // Each inner vector represents one input file.
     let is_strict = !args.is_present("lax");
-    let delimiter = args.value_of_os("delimiter")
+    let delimiter = args
+        .value_of_os("delimiter")
         .unwrap_or_else(|| ", ".as_ref())
         .try_to_str()
         .context("invalid value for --delimiter")?;
-    let scenario_files: Vec<ScenarioFile> = args.values_of_os("input")
+    let scenario_files: Vec<ScenarioFile> = args
+        .values_of_os("input")
         .ok_or(NoScenarios)?
         .map(|path| ScenarioFile::from_cl_arg(path, is_strict))
         .collect::<Result<_, _>>()
@@ -184,7 +186,9 @@ where
 {
     let mut printer = consumers::Printer::default();
     if let Some(template) = args.value_of_os("print0") {
-        let template = template.try_to_str().context("invalid value for --print0")?;
+        let template = template
+            .try_to_str()
+            .context("invalid value for --print0")?;
         printer.set_template(template);
     } else if let Some(template) = args.value_of_os("print") {
         let template = template.try_to_str().context("invalid value for --print")?;
@@ -263,7 +267,8 @@ impl<'a> CommandLineHandler<'a> {
         if args.occurrences_of("jobs") == 0 {
             return Ok(1);
         }
-        let jobs_arg = args.value_of_os("jobs")
+        let jobs_arg = args
+            .value_of_os("jobs")
             .expect("default value")
             .try_to_str()?;
         if jobs_arg == "auto" {

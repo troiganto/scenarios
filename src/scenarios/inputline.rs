@@ -246,7 +246,10 @@ pub enum SyntaxError {
     MissingClosingBracket(String),
     #[fail(display = "closing bracket \"]\" does not end the line: \"{}\"", _0)]
     TextAfterClosingBracket(String),
-    #[fail(display = "no variable name before \"=\" of a variable definition: \"{}\"", _0)]
+    #[fail(
+        display = "no variable name before \"=\" of a variable definition: \"{}\"",
+        _0
+    )]
     MissingVariableName(String),
     #[fail(display = "no equals sign \"=\" in variable definition: \"{}\"", _0)]
     NotAVarDef(String),

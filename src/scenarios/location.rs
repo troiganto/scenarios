@@ -13,8 +13,10 @@
 // permissions and limitations under the License.
 
 
-use std::fmt::{self, Display};
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::{self, Display},
+    path::{Path, PathBuf},
+};
 
 
 /// A type that encodes the location of an error in a file.

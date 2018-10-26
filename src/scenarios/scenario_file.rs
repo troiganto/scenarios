@@ -13,17 +13,17 @@
 // permissions and limitations under the License.
 
 
-use std::collections::hash_map::{Entry, HashMap};
-use std::ffi::OsStr;
-use std::fs::File;
-use std::io::{self, BufRead};
-use std::path::Path;
+use std::{
+    collections::hash_map::{Entry, HashMap},
+    ffi::OsStr,
+    fs::File,
+    io::{self, BufRead},
+    path::Path,
+};
 
 use failure::{Error, Fail, ResultExt};
 
-use super::inputline::InputLine;
-use super::location::ErrorLocation;
-use super::scenario::Scenario;
+use super::{inputline::InputLine, location::ErrorLocation, scenario::Scenario};
 
 
 /// Type that represents a scenario file.
@@ -273,7 +273,8 @@ impl<'a> Iterator for ScenariosIter<'a> {
     /// - The scenario cannot be build, or
     /// - a variable was defined outside of any scenario.
     fn next(&mut self) -> Option<Self::Item> {
-        match self.next_scenario()
+        match self
+            .next_scenario()
             .with_context(|_| self.location.to_owned())
         {
             Ok(None) => None,
@@ -304,8 +305,7 @@ pub struct DuplicateScenarioName(String);
 mod tests {
     use super::*;
 
-    use std::collections::HashSet;
-    use std::io::Cursor;
+    use std::{collections::HashSet, io::Cursor};
 
 
     fn get_scenarios(contents: &str) -> Result<ScenarioFile, Error> {

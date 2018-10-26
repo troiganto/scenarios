@@ -13,10 +13,11 @@
 // permissions and limitations under the License.
 
 
-use std::ffi::OsStr;
-use std::io;
-use std::mem;
-use std::process::{Command, ExitStatus};
+use std::{
+    ffi::OsStr,
+    io, mem,
+    process::{Command, ExitStatus},
+};
 
 use failure::{Error, ResultExt};
 use futures::{Async, Future, Poll};
@@ -66,7 +67,8 @@ impl<'a> PreparedChild<'a> {
     pub fn spawn(mut self, handle: &Handle) -> Result<RunningChild, Error> {
         let name = self.name;
         let program = self.program;
-        let child = self.command
+        let child = self
+            .command
             .spawn_async(handle)
             .map_err(|cause| {
                 let name = program.to_string_lossy().into_owned();
@@ -104,7 +106,8 @@ impl Future for RunningChild {
     type Error = Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let status = self.child
+        let status = self
+            .child
             .poll()
             .with_context(|_| WaitFailed)
             .with_context(|_| ScenarioFailed(self.take_name()));
