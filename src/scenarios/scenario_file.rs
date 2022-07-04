@@ -18,6 +18,7 @@ use std::{
     ffi::OsStr,
     fs::File,
     io::{self, BufRead},
+    iter::FusedIterator,
     path::Path,
 };
 
@@ -131,7 +132,7 @@ impl<'a> ScenarioFile<'a> {
             // number. If we *have* seen it before, we build an error
             // from the header line's content, the current line number
             // and the line number of the previous occurrence.
-            if let Some(header) = line.header() {
+            if let Some(header) = line.as_header() {
                 match seen_headers.entry(header) {
                     Entry::Vacant(entry) => {
                         entry.insert(loc.lineno);
@@ -230,9 +231,9 @@ impl<'a> ScenariosIter<'a> {
     fn next_header_line(&mut self) -> Result<Option<&'a str>, UnexpectedVarDef> {
         while let Some(line) = self.lines.get(self.location.lineno) {
             self.location.lineno += 1;
-            if let Some(header) = line.header() {
+            if let Some(header) = line.as_header() {
                 return Ok(Some(header));
-            } else if let Some(name) = line.definition_name() {
+            } else if let Some((name, _)) = line.as_definition() {
                 return Err(UnexpectedVarDef(name.to_owned()));
             }
         }
@@ -252,7 +253,7 @@ impl<'a> ScenariosIter<'a> {
                 break;
             } else {
                 self.location.lineno += 1;
-                if let Some(parts) = line.definition() {
+                if let Some(parts) = line.as_definition() {
                     return Some(parts);
                 }
             }
@@ -282,7 +283,24 @@ impl<'a> Iterator for ScenariosIter<'a> {
             Err(context) => Some(Err(Error::from(context))),
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
 }
+
+impl<'a> ExactSizeIterator for ScenariosIter<'a> {
+    fn len(&self) -> usize {
+        self.lines
+            .iter()
+            .skip(self.location.lineno)
+            .filter(|line| line.is_header())
+            .count()
+    }
+}
+
+impl<'a> FusedIterator for ScenariosIter<'a> {}
 
 
 /// The error returned for unexpected variable definitions.
@@ -460,4 +478,16 @@ mod tests {
             "variable definition before the first header: \"a\""
         );
     }
+
+
+    #[test]
+    fn test_exact_size_iterator() {
+        let file = get_scenarios("[first]\n[second]\n\n[third]\n[fourth]").unwrap();
+        let mut scenarios = file.iter();
+        assert_eq!(scenarios.len(), 4);
+        assert_eq!(scenarios.size_hint(), (4, Some(4)));
+        scenarios.next();
+        assert_eq!(scenarios.len(), 3);
+    }
+
 }

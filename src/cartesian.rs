@@ -62,6 +62,19 @@
 /// let combinations = cartesian::product(&slices);
 /// assert_eq!(combinations.next(), None);
 /// ```
+///
+/// For mathematical correctness, the product of no collections at all
+/// is one empty vector.
+///
+/// ```rust
+/// extern crate scenarios;
+///
+/// use scenarios::cartesian;
+///
+/// let combinations = cartesian::product(&[]);
+/// assert_eq!(combinations.next(), Some(Vec::new()));
+/// assert_eq!(combinations.next(), None);
+/// ```
 pub fn product<'a, C: 'a, T: 'a>(collections: &'a [C]) -> Product<'a, C, T>
 where
     &'a C: IntoIterator<Item = &'a T>,
@@ -103,7 +116,92 @@ where
         self.advance();
         result
     }
+
+    /// Calculate bounds on the number of remaining elements.
+    ///
+    /// This is calculated the same way as [`Product::len()`], but uses
+    /// a helper type to deal with the return type of `size_hint()`.
+    /// See there for information on why the used formula is corrected.
+    ///
+    /// [`Product::len()`]: #method.len
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if self.next_item.is_none() {
+            return (0, Some(0));
+        }
+        let SizeHint(lower, upper) = SizeHint(1, Some(1))
+            + self
+                .iterators
+                .iter()
+                .enumerate()
+                .map(|(i, iterator)| {
+                    SizeHint::from(iterator)
+                        * self.collections[i + 1..]
+                            .iter()
+                            .map(|c| SizeHint::from(&c.into_iter()))
+                            .product()
+                })
+                .sum();
+        (lower, upper)
+    }
 }
+
+impl<'a, C, T> ExactSizeIterator for Product<'a, C, T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
+    <&'a C as IntoIterator>::IntoIter: ExactSizeIterator,
+{
+    /// Calculates the exact number of remaining elements.
+    ///
+    /// The length consists of the following contributions:
+    ///
+    /// - 1 for the `next_item` to be yielded;
+    /// - `X` for each currently active iterator, where X is the
+    ///   product of the iterators length and the sizes of all
+    ///   *collections* to the right of it in the product.
+    ///
+    /// Example
+    /// -------
+    ///
+    /// Assume the Cartesian product `[1, 2, 3]×[1, 2]×[1, 2, 3]`. Upon
+    /// construction, the `Product` type creates three iterators `A`,
+    /// `B`, and `C` ­– one iterator for each array. It also extracts
+    /// one item from each to form `next_item`. Hence, `next_item`
+    /// contributes `1` to the total length. The three iterators
+    /// contribute as follows:
+    ///
+    /// - A: 2 items left × collection of size 2 × collection of size
+    ///   3 = 12;
+    /// - B: 1 item left × collection of size 3 = 3;
+    /// - C: 2 items left = 2.
+    ///
+    /// Thus, we end up with a total length of `1+12+3+2=18`. This is
+    /// the same length we get when multiplying the size of all passed
+    /// collections. (`3*2*3=18`) However, our (complicated) formula
+    /// also works when the iterator has already yielded some elements.
+    fn len(&self) -> usize {
+        if self.next_item.is_none() {
+            return 0;
+        }
+        1 + self
+            .iterators
+            .iter()
+            .enumerate()
+            .map(|(i, iterator)| {
+                iterator.len()
+                    * self.collections[i + 1..]
+                        .iter()
+                        .map(|c| c.into_iter().len())
+                        .product::<usize>()
+            })
+            .sum::<usize>()
+    }
+}
+
+impl<'a, C, T> ::std::iter::FusedIterator for Product<'a, C, T>
+where
+    &'a C: IntoIterator<Item = &'a T>,
+    <&'a C as IntoIterator>::IntoIter: ExactSizeIterator,
+{}
 
 impl<'a, C, T> Product<'a, C, T>
 where
@@ -173,6 +271,61 @@ where
 }
 
 
+#[derive(Debug)]
+struct SizeHint(usize, Option<usize>);
+
+impl SizeHint {
+    fn into_inner(self) -> (usize, Option<usize>) {
+        (self.0, self.1)
+    }
+}
+
+impl<'a, I: Iterator> From<&'a I> for SizeHint {
+    fn from(iter: &'a I) -> Self {
+        let (lower, upper) = iter.size_hint();
+        SizeHint(lower, upper)
+    }
+}
+
+impl ::std::ops::Add for SizeHint {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let lower = self.0 + other.0;
+        let upper = match (self.1, other.1) {
+            (Some(left), Some(right)) => Some(left + right),
+            _ => None,
+        };
+        SizeHint(lower, upper)
+    }
+}
+
+impl ::std::ops::Mul for SizeHint {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
+        let lower = self.0 * other.0;
+        let upper = match (self.1, other.1) {
+            (Some(left), Some(right)) => Some(left * right),
+            _ => None,
+        };
+        SizeHint(lower, upper)
+    }
+}
+
+impl ::std::iter::Sum for SizeHint {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(SizeHint(0, Some(0)), |acc, x| acc + x)
+    }
+}
+
+impl ::std::iter::Product for SizeHint {
+    fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(SizeHint(1, Some(1)), |acc, x| acc * x)
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     mod lengths {
@@ -181,8 +334,14 @@ mod tests {
         /// Asserts that the `len(V1×V2×...VN) ==
         /// len(V1)×len(V2)×...len(VN)`.
         fn assert_length<T>(vectors: &Vec<Vec<T>>) {
-            let expected_len: usize = vectors.iter().map(Vec::len).product();
-            let actual_len: usize = cartesian::product(vectors).collect::<Vec<Vec<&T>>>().len();
+            let expected_len = vectors.iter().map(Vec::len).product::<usize>();
+            let p = cartesian::product(vectors);
+            let (lower, upper) = p.size_hint();
+            let predicted_len = p.len();
+            let actual_len = p.collect::<Vec<Vec<&T>>>().len();
+            assert_eq!(expected_len, lower);
+            assert_eq!(expected_len, upper.unwrap());
+            assert_eq!(expected_len, predicted_len);
             assert_eq!(expected_len, actual_len);
         }
 

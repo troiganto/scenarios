@@ -130,7 +130,7 @@ impl InputLine {
     }
 
     /// If this is a header line, return its contents.
-    pub fn header(&self) -> Option<&str> {
+    pub fn as_header(&self) -> Option<&str> {
         if self.eq_pos == 0 {
             self.content.as_ref().map(Box::as_ref)
         } else {
@@ -139,7 +139,7 @@ impl InputLine {
     }
 
     /// If this is a definition line, return its split contents.
-    pub fn definition(&self) -> Option<(&str, &str)> {
+    pub fn as_definition(&self) -> Option<(&str, &str)> {
         if self.eq_pos > 0 {
             self.content.as_ref().map(|s| {
                 (
@@ -147,28 +147,6 @@ impl InputLine {
                     s[self.eq_pos + 1..].trim_left(),
                 )
             })
-        } else {
-            None
-        }
-    }
-
-    /// If this is a definition line, return the name it defines.
-    pub fn definition_name(&self) -> Option<&str> {
-        if self.eq_pos > 0 {
-            self.content
-                .as_ref()
-                .map(|line| line[..self.eq_pos].trim_right())
-        } else {
-            None
-        }
-    }
-
-    /// If this is a definition line, return the assigned value.
-    pub fn definition_value(&self) -> Option<&str> {
-        if self.eq_pos > 0 {
-            self.content
-                .as_ref()
-                .map(|line| line[self.eq_pos + 1..].trim_left())
         } else {
             None
         }
@@ -275,7 +253,7 @@ mod tests {
     fn test_header() {
         fn assert_eq_header(line: &str, expected_header: &str) {
             let input_line = line.parse::<InputLine>().unwrap();
-            if let Some(header) = input_line.header() {
+            if let Some(header) = input_line.as_header() {
                 assert_eq!(header, expected_header);
             } else {
                 panic!("not a header: {}", line.to_owned());
@@ -298,7 +276,7 @@ mod tests {
     fn test_definition() {
         fn assert_eq_vardef(line: &str, expected_var: &str, expected_def: &str) {
             let input_line = line.parse::<InputLine>().unwrap();
-            if let Some(definition) = input_line.definition() {
+            if let Some(definition) = input_line.as_definition() {
                 assert_eq!(definition, (expected_var, expected_def));
             } else {
                 panic!("not a definition: {}", line.to_owned());
